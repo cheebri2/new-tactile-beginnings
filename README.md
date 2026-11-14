@@ -12,11 +12,10 @@ pc/              capture.py, process.py, analyze.py (+ piezo/ library, tests/)
 
 ## Hardware (one ESP32)
 
-- Piezos: up_right GPIO34, up_left GPIO35, down_left GPIO32, down_right GPIO33.
 - Drive: GPIO26 (DAC2) → 100 nF → PAM8403 left input (`ACT_INPUT` on system_board). GPIO25 is
   the battery sense divider on that board and is not driven.
-- Board connectors → firmware channels: PZT1 (J1, GPIO32) = down_left, PZT2 (J2, GPIO33) =
-  down_right, PZT3 (J3, GPIO34) = up_right, PZT4 (J4, GPIO35) = up_left.
+- Piezos (board connector → channel): J4/PZT4 GPIO35 = up_right, J2/PZT2 GPIO33 = up_left,
+  J1/PZT1 GPIO32 = down_left, J3/PZT3 GPIO34 = down_right. Set in `kPins` in the firmware.
 - The tone runs on core 0 and the sampling on core 1, both on the same `micros()` clock. The
   board reports when each tone starts, so the laptop knows the drive phase at every sample.
 

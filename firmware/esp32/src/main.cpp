@@ -3,7 +3,7 @@
 //   - core 1: samples the four piezos at a fixed rate and streams the raw counts
 // All processing (amplitude, phase, features) happens on the laptop (pc/).
 //
-// Channels: up_right GPIO34, up_left GPIO35, down_left GPIO32, down_right GPIO33
+// Channels: up_right GPIO35 (J4), up_left GPIO33 (J2), down_left GPIO32 (J1), down_right GPIO34 (J3)
 //
 // Sweep: lead_ms of silence, then for each frequency f_start, f_start+f_step, ... <= f_stop:
 //   tone_ms of sine (raised-cosine ramp of ramp_ms at both ends, phase 0 at the tone start),
@@ -33,11 +33,11 @@
 #include <math.h>
 
 namespace {
-constexpr uint8_t kPins[4] = {34, 35, 32, 33};  // ur, ul, dl, dr
+constexpr uint8_t kPins[4] = {35, 33, 32, 34};  // ur, ul, dl, dr (system_board J4, J2, J1, J3)
 constexpr uint8_t kDacPin = 26;  // ACT_INPUT on system_board: GPIO26 -> 100 nF -> PAM8403 INL
 // GPIO25 is V_Sense (battery divider) on the board, so never drive it.
 constexpr uint32_t kBaud = 921600;
-constexpr const char *kFirmware = "piezo-sweep-2.0";
+constexpr const char *kFirmware = "piezo-sweep-2.1";
 
 // ---------------------------------------------------------------- sweep settings
 struct Config {
@@ -189,10 +189,11 @@ void measureAdcSpacing() {
 }
 
 void printInfo() {
-  Serial.printf("INFO,fw=%s,rate_hz=%lu,channels=ur;ul;dl;dr,pins=34;35;32;33,dac_pin=26,"
+  Serial.printf("INFO,fw=%s,rate_hz=%lu,channels=ur;ul;dl;dr,pins=%u;%u;%u;%u,dac_pin=%u,"
                 "adc_read_us=%.2f,f_start=%.2f,f_stop=%.2f,f_step=%.2f,tone_ms=%lu,gap_ms=%lu,"
                 "lead_ms=%lu,amp=%u,ramp_ms=%lu\n",
-                kFirmware, (unsigned long)sampleRateHz, adcReadUs, cfg.fStart, cfg.fStop,
+                kFirmware, (unsigned long)sampleRateHz, kPins[0], kPins[1], kPins[2], kPins[3], kDacPin,
+                adcReadUs, cfg.fStart, cfg.fStop,
                 cfg.fStep, (unsigned long)cfg.toneMs, (unsigned long)cfg.gapMs,
                 (unsigned long)cfg.leadMs, cfg.amp, (unsigned long)cfg.rampMs);
 }
