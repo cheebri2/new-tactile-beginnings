@@ -7,7 +7,7 @@
 
 Writes to results/<name>/:
   amplitude.png       mean +/- SD per condition for each disc (thin lines = individual repeats)
-  phase.png           phase vs the up-right disc, circular mean +/- SD
+  phase.png           phase lag behind the drive signal, circular mean +/- SD
   repeatability.png   between-condition / within-condition spread per disc and frequency
   pairs.png           effect size for each pair of conditions, disc x frequency
   trials_pca.png      every trial on the first two principal components, by condition
@@ -84,18 +84,18 @@ def plot_amplitude(f, conds, colors, ylabel, path):
     plt.close(fig)
 
 
-def plot_phase(f, conds, colors, path):
-    fig, axes = setup_axes(f"Phase relative to {CHANNEL_NAMES[REF_CHANNEL]} (positive = lags): "
-                           "circular mean ± SD")
+def plot_phase(f, conds, colors, path, vs_drive):
+    ref = "the drive signal" if vs_drive else CHANNEL_NAMES[REF_CHANNEL]
+    fig, axes = setup_axes(f"Phase lag behind {ref}: circular mean ± SD across repeats")
     for ch in CHANNELS:
         ax = axes[LAYOUT[ch]]
         ax.set_title(CHANNEL_NAMES[ch], fontsize=10, loc="left")
-        if ch == REF_CHANNEL:
+        if ch == REF_CHANNEL and not vs_drive:
             ax.text(0.5, 0.5, "reference disc (phase 0)", transform=ax.transAxes, ha="center", color="#6b6a64")
             continue
         for c in conds:
             d = f[(f.channel == ch) & (f.condition == c)]
-            s = d.groupby("freq_hz")["phase_deg"].apply(lambda v: pd.Series(stats.circ_mean_sd(v),
+            s = d.groupby("freq_hz")["phase"].apply(lambda v: pd.Series(stats.circ_mean_sd(v),
                                                                              index=["m", "sd"])).unstack()
             ax.errorbar(s.index, s["m"], yerr=s["sd"], color=colors[c], lw=1.6, capsize=2,
                         marker="o", ms=3, label=c)
@@ -177,11 +177,11 @@ def write_report(path, a, trials, summary, sep, pairs, acc, conds):
     lines = [f"# Condition comparison ({a.norm} amplitude)", "",
              f"{len(trials)} trials, {len(conds)} conditions, sessions: "
              f"{', '.join(sorted(trials.session.astype(str).unique()))}", "",
-             "| condition | trials | median lock quality | median SNR (dB) |", "|---|---|---|---|"]
+             "| condition | trials | median SNR (dB) |", "|---|---|---|"]
     for c in conds:
         t = trials[trials.condition == c]
         snr = summary[summary.condition == c].snr_db_median.median()
-        lines.append(f"| {c} | {len(t)} | {t.align_quality.median():.1f} | {snr:.0f} |")
+        lines.append(f"| {c} | {len(t)} | {snr:.0f} |")
     if len(sep):
         lines += ["", "## Repeatability (log amplitude)", "",
                   "Within = spread between repeats of the same condition (reseating). "
@@ -233,6 +233,9 @@ def main():
     feats = feats[feats.trial_id.isin(trials.trial_id) & feats.freq_hz.between(a.fmin, a.fmax)]
     f = stats.normalise(feats, trials, a.norm)
     f = f.merge(trials[["trial_id", "condition"]], on="trial_id")
+    # Phase vs the drive when the board logged tone timing; vs the up-right disc for old data.
+    vs_drive = "phase_deg" in f and f["phase_deg"].notna().all()
+    f["phase"] = f["phase_deg"] if vs_drive else f["phase_rel_deg"] if "phase_rel_deg" in f else f["phase_deg"]
     conds = a.conditions or list(dict.fromkeys(trials.sort_values("time").condition))
     conds = [c for c in conds if c in set(f.condition)]
     if len(conds) > len(PALETTE):
@@ -253,7 +256,7 @@ def main():
     pairs.to_csv(out / "pairs.csv", index=False)
 
     plot_amplitude(f, conds, colors, YLABEL[a.norm], out / "amplitude.png")
-    plot_phase(f, conds, colors, out / "phase.png")
+    plot_phase(f, conds, colors, out / "phase.png", vs_drive)
     if len(sep):
         plot_repeatability(sep, out / "repeatability.png")
     plot_pairs(pairs, out / "pairs.png")

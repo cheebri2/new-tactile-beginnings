@@ -49,7 +49,7 @@ def circ_mean_sd(deg):
 def condition_summary(f: pd.DataFrame) -> pd.DataFrame:
     """Mean, SD and CV of `value` and circular mean/SD of phase per condition x channel x frequency."""
     def agg(g):
-        pm, ps = circ_mean_sd(g["phase_deg"])
+        pm, ps = circ_mean_sd(g["phase"])
         v = g["value"]
         return pd.Series({"n": len(g), "mean": v.mean(), "sd": v.std(ddof=1),
                           "cv_pct": 100 * v.std(ddof=1) / v.mean() if v.mean() else np.nan,

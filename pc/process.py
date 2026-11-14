@@ -27,16 +27,16 @@ def main():
     for i, tid in enumerate(ids, 1):
         t_us, adc, meta = store.load_trial(data, tid)
         sweep = Sweep.from_dict(meta["sweep"])
-        adc_read_us = float(meta.get("sense_info", {}).get("adc_read_us", 0))
+        adc_read_us = float(meta.get("board_info", meta.get("sense_info", {})).get("adc_read_us", 0))
         try:
-            rows, info = extract(t_us, adc, sweep, adc_read_us)
+            rows, info = extract(t_us, adc, sweep, adc_read_us, meta.get("events"))
         except ValueError as e:
             print(f"skip {tid}: {e}")
             continue
         info.update({f"stream_{k}": v for k, v in meta.get("stream", {}).items()})
         trial_rows.append(store.trial_row(meta, info))
         feat_rows += [dict(trial_id=tid, **r) for r in rows]
-        print(f"[{i}/{len(ids)}] {tid}  lock quality {info['align_quality']:.1f}")
+        print(f"[{i}/{len(ids)}] {tid}  timing from {info['timing']}")
 
     trials, feats = pd.DataFrame(trial_rows), pd.DataFrame(feat_rows)
     trials.to_csv(data / "trials.csv", index=False)

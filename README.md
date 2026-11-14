@@ -6,23 +6,21 @@ at each frequency. Trials are tagged with test metadata so conditions (blank, ob
 depth, …) can be averaged and compared, and so the data can feed a model later.
 
 ```
-firmware/sense   sensing ESP32: streams raw ADC samples (GPIO 34/35/32/33 = ur/ul/dl/dr)
-firmware/drive   drive ESP32: sine sweep on DAC GPIO25 -> amp -> transducer
+firmware/esp32   one ESP32: samples the 4 piezos and plays the sine sweep
 pc/              capture.py, process.py, analyze.py (+ piezo/ library, tests/)
 ```
 
-## Hardware
+## Hardware (one ESP32)
 
-- **Sensing ESP32**: piezo channels unchanged: up_right 34, up_left 35, down_left 32, down_right 33.
-- **Drive ESP32**: GPIO25 (DAC) → amp input, GND → amp GND. The DAC sine sits on ~1.65 V, so the amp
-  input must be AC coupled (add a 1–10 µF series cap if it is not). No wire between the two ESP32s:
-  the laptop finds the sweep in the piezo data by its timing pattern.
-- Both boards on laptop USB is the normal setup. Without the drive board on USB, leave out
-  `--drive-port` and press the drive board's BOOT button when the script asks.
+- Piezos: up_right GPIO34, up_left GPIO35, down_left GPIO32, down_right GPIO33.
+- Drive: GPIO25 (DAC) → amp input. The DAC sine sits on ~1.65 V, so the amp input must be AC
+  coupled (add a 1–10 µF series cap if it is not).
+- The tone runs on core 0 and the sampling on core 1, both on the same `micros()` clock. The
+  board reports when each tone starts, so the laptop knows the drive phase at every sample.
 
 ## Setup
 
-1. Flash each board: open `firmware/sense` (then `firmware/drive`) in PlatformIO and Upload.
+1. Flash the board: open `firmware/esp32` in PlatformIO and Upload.
 2. `cd pc && pip install -r requirements.txt`
 
 ## Run a test
@@ -32,9 +30,9 @@ spread across reseats is what tells you whether a difference is real.
 
 ```
 cd pc
-python capture.py --port COM3 --drive-port COM4 --test blank --depth 15 --load 200 --repeats 5
-python capture.py --port COM3 --drive-port COM4 --test object --object vertebra --depth 15 --load 200 --repeats 5
-python capture.py --port COM3 --drive-port COM4 --test offset --object vertebra --x 10 --depth 15 --load 200 --repeats 5
+python capture.py --port COM3 --test blank --depth 15 --load 200 --repeats 5
+python capture.py --port COM3 --test object --object vertebra --depth 15 --load 200 --repeats 5
+python capture.py --port COM3 --test offset --object vertebra --x 10 --depth 15 --load 200 --repeats 5
 ```
 
 Metadata flags: `--test` (blank, object, offset, depth, rotation, load, noise, other), `--object`,
@@ -42,7 +40,7 @@ Metadata flags: `--test` (blank, object, offset, depth, rotation, load, noise, o
 (defaults to today), `--notes`. Sweep flags: `--f-start --f-stop --f-step --tone-ms --amp`.
 Try it without hardware: `python capture.py --simulate --test object --object vertebra --repeats 3`.
 
-After each trial it prints the sweep lock quality and SNR per disc, and asks whether to keep it.
+After each trial it prints the SNR and peak amplitude per disc, and asks whether to keep it.
 
 ## Compare conditions
 
@@ -58,7 +56,7 @@ coupling/preload), `blank` (divided by the same session's blank). Output in `res
 | file | shows |
 |---|---|
 | `amplitude.png` | mean ± SD per condition for each disc, every repeat as a thin line |
-| `phase.png` | phase vs the up-right disc, mean ± SD |
+| `phase.png` | phase lag behind the drive signal, mean ± SD |
 | `repeatability.png` | between-condition / within-condition spread per frequency (below 1 = repeats dominate) |
 | `pairs.png` | effect size d for each pair of conditions, disc × frequency |
 | `trials_pca.png` | each trial on two principal components, with a leave-one-out accuracy |
@@ -69,13 +67,14 @@ coupling/preload), `blank` (divided by the same session's blank). Output in `res
 | file | contents |
 |---|---|
 | `raw/<trial>.csv.gz` + `.json` | raw samples (t_us, ur, ul, dl, dr) and all metadata. Source of truth |
-| `trials.csv` | one row per trial: metadata, condition label, lock quality, dropped data |
-| `features.csv` | one row per trial × disc × frequency: amp, phase_deg, re, im, noise_amp, snr_db |
+| `trials.csv` | one row per trial: metadata, condition label, dropped data |
+| `features.csv` | one row per trial × disc × frequency: amp, phase_deg, phase_rel_deg, re, im, noise_amp, snr_db |
 | `dataset_wide.csv` | one row per trial, every feature a column, ready for ML |
 
 Amplitude is the peak sine amplitude in ADC counts, fitted at the exact step frequency on the
-steady part of each tone. Phase is relative to the up-right disc (there is no shared wire, so
-the absolute drive phase is unknown). Noise is the same fit on the silent lead-in. After changing
+steady part of each tone. `phase_deg` is the lag behind the drive command (it includes the amp
+and transducer delay, which is the same every trial); `phase_rel_deg` is the lag behind the
+up-right disc; `re`/`im` are the complex response vs the drive. Noise is the same fit on the silent lead-in. After changing
 the feature code or fixing metadata in a `.json`, rebuild the tables with `python process.py`.
 
 Tests: `cd pc && python -m pytest tests`.
