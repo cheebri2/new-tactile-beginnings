@@ -1,5 +1,5 @@
 // One ESP32 does both jobs:
-//   - core 0: plays the stepped sine sweep on the DAC (GPIO25 -> amp -> transducer)
+//   - core 0: plays the stepped sine sweep on the DAC (GPIO26 -> PAM8403 amp -> transducer)
 //   - core 1: samples the four piezos at a fixed rate and streams the raw counts
 // All processing (amplitude, phase, features) happens on the laptop (pc/).
 //
@@ -34,7 +34,8 @@
 
 namespace {
 constexpr uint8_t kPins[4] = {34, 35, 32, 33};  // ur, ul, dl, dr
-constexpr uint8_t kDacPin = 25;
+constexpr uint8_t kDacPin = 26;  // ACT_INPUT on system_board: GPIO26 -> 100 nF -> PAM8403 INL
+// GPIO25 is V_Sense (battery divider) on the board, so never drive it.
 constexpr uint32_t kBaud = 921600;
 constexpr const char *kFirmware = "piezo-sweep-2.0";
 
@@ -188,7 +189,7 @@ void measureAdcSpacing() {
 }
 
 void printInfo() {
-  Serial.printf("INFO,fw=%s,rate_hz=%lu,channels=ur;ul;dl;dr,pins=34;35;32;33,dac_pin=25,"
+  Serial.printf("INFO,fw=%s,rate_hz=%lu,channels=ur;ul;dl;dr,pins=34;35;32;33,dac_pin=26,"
                 "adc_read_us=%.2f,f_start=%.2f,f_stop=%.2f,f_step=%.2f,tone_ms=%lu,gap_ms=%lu,"
                 "lead_ms=%lu,amp=%u,ramp_ms=%lu\n",
                 kFirmware, (unsigned long)sampleRateHz, adcReadUs, cfg.fStart, cfg.fStop,
