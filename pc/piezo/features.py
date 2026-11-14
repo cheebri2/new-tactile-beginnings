@@ -2,11 +2,12 @@
 
 Steps:
 1. Remove each channel's resting level (differs per board).
-2. Find where the sweep sits in the recording: the drive board has no wire to the sensing
-   board, so the known step pattern (on high-passed data) (which frequency when) is matched against the data.
+2. Take each tone's start time from the board's events. The tone and the samples use the
+   same micros() clock, so the drive phase is known at every sample.
 3. For each step, least-squares fit a sine at that exact frequency over the steady part of
-   the tone (plus a slow drift term, so hand/pressure drift does not leak in). Amplitude is in ADC counts (peak). Phase is the lag relative to the reference
-   channel, because the absolute drive phase is not available without a shared wire.
+   the tone (plus a slow drift term, so pressure drift does not leak in). Amplitude is in ADC
+   counts (peak). Phase is the lag behind the drive command (includes the amp and transducer
+   delay, which is the same for every trial) and also the lag behind the up-right disc.
 4. The same fit on the silent lead-in gives the noise floor at every frequency (SNR).
 """
 
@@ -62,28 +63,61 @@ def fit_sine(t, y, f):
     return complex(coef[0], coef[1]), float(np.sqrt(np.mean(resid ** 2)))
 
 
-def extract(t_us, adc, sweep: Sweep, adc_read_us=0.0):
+def tone_times_from_events(events, sweep: Sweep, t_first_us):
+    """(sweep start, [tone start per frequency]) in seconds from the board's events, or None."""
+    if not events:
+        return None
+    starts = [e for e in events if e["event"] == "sweep_start"]
+    tones = [e for e in events if e["event"] == "tone_start"]
+    if not starts or len(tones) < len(sweep.freqs):
+        return None
+    t0 = starts[-1]["t_us"]
+    tones = [e for e in tones if e["t_us"] >= t0][:len(sweep.freqs)]
+    if len(tones) < len(sweep.freqs):
+        return None
+    got = np.array([e["freq_hz"] for e in tones])
+    if np.max(np.abs(got - sweep.freqs)) > 0.01:
+        raise ValueError(f"board played {got[:3]}... but the sweep settings say {sweep.freqs[:3]}...")
+    return (t0 - t_first_us) / 1e6, np.array([(e["t_us"] - t_first_us) / 1e6 for e in tones])
+
+
+def extract(t_us, adc, sweep: Sweep, adc_read_us=0.0, events=None):
     """Features for one capture.
 
-    Returns (rows, info): rows is a list of dicts, one per channel x frequency
-    (channel, freq_hz, amp, phase_deg, re, im, noise_amp, snr_db, resid_rms);
-    info has fs_hz, sweep_start_s, align_quality.
+    Tone timing comes from the board's events (same clock as the samples), which also makes
+    the phase relative to the drive measurable. Without events (old two-board data) the
+    sweep is found by its timing pattern and only the phase between discs is available.
+
+    Returns (rows, info): rows is a list of dicts, one per channel x frequency (channel,
+    freq_hz, amp, phase_deg [lag vs drive], phase_rel_deg [lag vs the up-right disc], re, im
+    [complex response vs drive], noise_amp, snr_db, resid_rms); info has fs_hz,
+    sweep_start_s, timing ("events" or "pattern") and align_quality (pattern only).
     """
-    t_us = np.asarray(t_us, dtype=np.float64)
+    t_us = np.asarray(t_us, dtype=np.int64)
     t_s = (t_us - t_us[0]) / 1e6
     fs = 1.0 / np.median(np.diff(t_s))
     raw = np.asarray(adc, dtype=np.float64)
     raw = raw - np.median(raw, axis=0)
-    t0, quality = find_sweep(t_s, highpass(raw, fs), sweep)
-    a, b = sweep.windows_s
+
+    timed = tone_times_from_events(events, sweep, int(t_us[0]))
+    if timed is not None:
+        t0, tone_starts = timed
+        if tone_starts[-1] + sweep.tone_ms / 1000 > t_s[-1]:
+            raise ValueError("capture ended before the last tone finished")
+        timing, quality = "events", np.nan
+    else:
+        t0, quality = find_sweep(t_s, highpass(raw, fs), sweep)
+        tone_starts = t0 + sweep.tone_starts_s
+        timing = "pattern"
+    settle, keep_until = sweep.settle_ms / 1000, (sweep.tone_ms - sweep.tail_ms) / 1000
     na, nb = sweep.noise_window_s
+    nsel = (t_s >= t0 + na) & (t_s < t0 + nb)
     ref = CHANNELS.index(REF_CHANNEL)
 
     rows = []
     for k, f in enumerate(sweep.freqs):
-        sel = (t_s >= t0 + a[k]) & (t_s < t0 + b[k])
-        nsel = (t_s >= t0 + na) & (t_s < t0 + nb)
-        tone_t0 = t0 + sweep.tone_starts_s[k]
+        tone_t0 = tone_starts[k]
+        sel = (t_s >= tone_t0 + settle) & (t_s < tone_t0 + keep_until)
         fits = []
         for ch in range(len(CHANNELS)):
             # channel ch was read ch * adc_read_us after the frame timestamp
@@ -92,20 +126,21 @@ def extract(t_us, adc, sweep: Sweep, adc_read_us=0.0):
             zn, _ = fit_sine(tc[nsel], raw[nsel, ch], f) if nsel.sum() > 20 else (np.nan, 0)
             fits.append((z, resid, abs(zn)))
         zref = fits[ref][0]
-        rot = np.conj(zref) / abs(zref) if abs(zref) > 0 else 1.0
         for ch, (z, resid, noise) in enumerate(fits):
-            zr = z * rot  # phase relative to the reference channel
             amp = abs(z)
+            rel = np.angle(z * np.conj(zref)) if abs(zref) > 0 else np.nan
             rows.append({
                 "channel": CHANNELS[ch],
                 "freq_hz": float(f),
                 "amp": amp,
-                "phase_deg": float(np.degrees(np.angle(zr))),
-                "re": zr.real,
-                "im": zr.imag,
+                "phase_deg": float(np.degrees(np.angle(z))) if timing == "events" else np.nan,
+                "phase_rel_deg": float(np.degrees(rel)),
+                "re": z.real if timing == "events" else np.nan,
+                "im": z.imag if timing == "events" else np.nan,
                 "noise_amp": noise,
                 "snr_db": float(20 * np.log10(amp / noise)) if noise > 0 else np.nan,
                 "resid_rms": resid,
                 "n_samples": int(sel.sum()),
             })
-    return rows, {"fs_hz": float(fs), "sweep_start_s": t0, "align_quality": quality}
+    return rows, {"fs_hz": float(fs), "sweep_start_s": float(t0), "timing": timing,
+                  "align_quality": quality}

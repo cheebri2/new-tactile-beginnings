@@ -1,5 +1,5 @@
-"""The stepped sweep the drive ESP32 plays. Must match firmware/drive (the capture
-script sends `cfg` to the drive board so they always agree)."""
+"""The stepped sweep the ESP32 plays. Defaults match firmware/esp32, and capture.py
+sends `cfg` to the board before each run so they always agree."""
 
 from dataclasses import asdict, dataclass
 

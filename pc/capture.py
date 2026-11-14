@@ -1,9 +1,9 @@
 """Run repeated sweep trials for one test condition and save raw data + features.
 
 Examples
-  python capture.py --port COM3 --drive-port COM4 --test blank --depth 15 --repeats 5
-  python capture.py --port COM3 --drive-port COM4 --test object --object vertebra --depth 15 --repeats 5
-  python capture.py --port COM3 --drive-port COM4 --test offset --object vertebra --x 5 --depth 15
+  python capture.py --port COM3 --test blank --depth 15 --repeats 5
+  python capture.py --port COM3 --test object --object vertebra --depth 15 --repeats 5
+  python capture.py --port COM3 --test offset --object vertebra --x 5 --depth 15
   python capture.py --simulate --test object --object vertebra --repeats 3     # no hardware
 
 Between repeats it waits for Enter so you can lift and reseat the sensor head
@@ -31,8 +31,7 @@ TEST_TYPES = ["blank", "object", "offset", "depth", "rotation", "load", "noise",
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     io = p.add_argument_group("hardware")
-    io.add_argument("--port", help="sensing ESP32 serial port, e.g. COM3")
-    io.add_argument("--drive-port", help="drive ESP32 port. Without it, press BOOT on the drive board when asked")
+    io.add_argument("--port", help="ESP32 serial port, e.g. COM3")
     io.add_argument("--rate", type=int, default=2000, help="sample rate in Hz (default 2000)")
     io.add_argument("--simulate", action="store_true", help="fake data, no hardware")
 
@@ -60,32 +59,6 @@ def parse_args():
     return p.parse_args()
 
 
-def record_hardware(sense, drive, sweep, rate):
-    """One sweep. Returns (t_us, adc, stream stats)."""
-    s = stream.SenseStream(sense)
-    s.start()
-    time.sleep(0.5)  # some samples before the sweep
-    if drive is not None:
-        drive.reset_input_buffer()
-        drive.write(b"sweep\n")
-        end = time.time() + sweep.duration_s + 5
-        while time.time() < end:
-            line = drive.readline().decode(errors="ignore").strip()
-            if line.startswith("SWEEP_END") or line.startswith("SWEEP_ABORTED"):
-                break
-        else:
-            print("  warning: drive board never said SWEEP_END")
-        time.sleep(0.5)
-    else:
-        print(f"  >>> press BOOT on the drive board now (recording {sweep.duration_s + 4:.0f} s)")
-        time.sleep(sweep.duration_s + 4)
-    raw = s.stop()
-    t_us, adc, stats = stream.parse_blocks(raw)
-    if len(t_us) < rate:
-        sys.exit("No samples from the sensing board. Check the port and that firmware/sense is flashed.")
-    return t_us, adc, stats
-
-
 def main():
     a = parse_args()
     data = Path(a.data)
@@ -96,23 +69,20 @@ def main():
                  "session": a.session, "notes": a.notes, "calibration": a.calibration,
                  "sweep": sweep.to_dict()}
 
-    sense = drive = None
-    sense_info, drive_info = {"rate_hz": a.rate, "adc_read_us": 0.0, "fw": "simulated"}, {}
+    ser = None
+    board_info = {"rate_hz": a.rate, "adc_read_us": 0.0, "fw": "simulated"}
     if not a.simulate:
         if not a.port:
             sys.exit("--port is required (or use --simulate)")
-        sense = stream.open_port(a.port, stream.SENSE_BAUD)
-        sense.write(b"x\n")
-        time.sleep(0.2)
-        sense_info = stream.parse_info(stream.ask(sense, f"r{a.rate}"))
-        if a.drive_port:
-            drive = stream.open_port(a.drive_port, stream.DRIVE_BAUD)
-            drive_info = stream.parse_info(stream.ask(drive, sweep.cfg_command()))
-        else:
-            print("No --drive-port: the drive board must hold the same sweep settings as its defaults.")
-        print(f"Sensing board: {sense_info}")
-        if drive_info:
-            print(f"Drive board:   {drive_info}")
+        ser = stream.open_port(a.port, stream.BAUD)
+        ser.write(b"off\nx\n")
+        time.sleep(0.3)
+        stream.ask(ser, f"r{a.rate}")
+        reply = stream.ask(ser, sweep.cfg_command())
+        if reply.startswith("ERR"):
+            sys.exit(f"Board rejected the sweep settings: {reply}")
+        board_info = stream.parse_info(reply)
+        print(f"Board: {board_info}")
 
     label = store.condition_label(meta_base)
     print(f"\nCondition: {label}   ({sweep.duration_s:.1f} s per sweep, {len(sweep.freqs)} frequencies "
@@ -125,31 +95,35 @@ def main():
         if cmd == "q":
             break
         if a.simulate:
-            t_us, adc = simulate.capture(meta_base, sweep, fs=a.rate)
+            t_us, adc, events = simulate.capture(meta_base, sweep, fs=a.rate)
             stats = {"blocks": 0, "bad_blocks": 0, "lost_blocks": 0, "overruns": 0}
         else:
-            t_us, adc, stats = record_hardware(sense, drive, sweep, a.rate)
+            print(f"  sweeping ({sweep.duration_s:.0f} s)...")
+            t_us, adc, events, stats = stream.record_sweep(ser, sweep.duration_s)
+            if len(t_us) < a.rate:
+                sys.exit("No samples from the board. Check the port and that firmware/esp32 is flashed.")
 
         now = dt.datetime.now()
         trial_id = store.safe(f"{now:%Y%m%d-%H%M%S}_{a.test}_r{repeat:02d}")
         meta = dict(meta_base, trial_id=trial_id, time=now.isoformat(timespec="seconds"),
-                    repeat=repeat, stream=stats, sense_info=sense_info, drive_info=drive_info)
+                    repeat=repeat, stream=stats, board_info=board_info, events=events)
         try:
-            rows, info = extract(t_us, adc, sweep, float(sense_info.get("adc_read_us", 0)))
+            rows, info = extract(t_us, adc, sweep, float(board_info.get("adc_read_us", 0)), events)
         except ValueError as e:
             print(f"  could not process this trial: {e}. Not saved.")
             continue
         info.update({f"stream_{k}": v for k, v in stats.items()})
         feats = pd.DataFrame(rows)
         snr = feats.groupby("channel")["snr_db"].median()
-        print(f"  {len(t_us)} samples at {info['fs_hz']:.0f} Hz, sweep found at {info['sweep_start_s']:.2f} s "
-              f"(lock quality {info['align_quality']:.1f})")
+        print(f"  {len(t_us)} samples at {info['fs_hz']:.0f} Hz, sweep started at {info['sweep_start_s']:.2f} s")
         print("  median SNR dB: " + "  ".join(f"{c}={snr[c]:.0f}" for c in CHANNELS))
         print("  peak amp:      " + "  ".join(
             f"{c}={feats[feats.channel == c].amp.max():.1f}@{feats.loc[feats[feats.channel == c].amp.idxmax(), 'freq_hz']:g}Hz"
             for c in CHANNELS))
-        if info["align_quality"] < 3 or stats["lost_blocks"] or stats["bad_blocks"]:
-            print("  WARNING: weak sweep lock or lost data. Check the drive is on and the skin is touching.")
+        if info["timing"] != "events" or stats["lost_blocks"] or stats["bad_blocks"]:
+            print("  WARNING: missing sweep events or lost data (USB cable/port?).")
+        if snr.min() < 10:
+            print("  WARNING: a disc is under 10 dB SNR. Check the amp is on and every disc touches the skin.")
         if input("  keep this trial? [Y/s=skip] ").strip().lower() == "s":
             continue
 
@@ -160,9 +134,8 @@ def main():
         print(f"  saved {trial_id}")
         done += 1
 
-    for ser in (sense, drive):
-        if ser is not None:
-            ser.close()
+    if ser is not None:
+        ser.close()
     if done:
         trials = pd.read_csv(data / "trials.csv")
         feats = pd.read_csv(data / "features.csv")

@@ -1,4 +1,4 @@
-"""Serial link to the two ESP32s and the binary block format of firmware/sense."""
+"""Serial link to the ESP32 and the binary block format of firmware/esp32."""
 
 import struct
 import threading
@@ -7,26 +7,40 @@ import time
 import numpy as np
 
 MAGIC = b"\xA5\x5A"
+EVENT_MAGIC = b"\xA5\x5B"
 HEADER = struct.Struct("<HIH")  # n, seq, overruns (after the 2 magic bytes)
+EVENT = struct.Struct("<BIf")   # type, t_us, freq_hz
 FRAME = np.dtype([("t_us", "<u4"), ("adc", "<u2", (4,))])
-SENSE_BAUD = 921600
-DRIVE_BAUD = 115200
+BAUD = 921600
+EVENT_NAMES = {1: "sweep_start", 2: "tone_start", 3: "tone_end", 4: "sweep_end", 5: "sweep_aborted"}
 
 
 def parse_blocks(buf: bytes):
     """Decode every valid block in `buf`.
 
-    Returns (t_us uint64 unwrapped, adc uint16 [N,4], stats dict). Corrupt blocks are
-    skipped and counted; a gap in the block counter means blocks were lost.
+    Returns (t_us int64 unwrapped, adc uint16 [N,4], events, stats dict). events is a list of
+    {"event", "t_us", "freq_hz"} on the same clock as t_us. Corrupt blocks are skipped and
+    counted; a gap in the block counter means blocks were lost.
     """
-    times, adcs = [], []
+    times, adcs, raw_events = [], [], []
     stats = {"blocks": 0, "bad_blocks": 0, "lost_blocks": 0, "overruns": 0}
     last_seq = None
     i = 0
     while True:
-        i = buf.find(MAGIC, i)
+        i = buf.find(b"\xA5", i)
         if i < 0 or i + 2 + HEADER.size > len(buf):
             break
+        if buf[i + 1:i + 2] == EVENT_MAGIC[1:]:
+            end = i + 2 + EVENT.size
+            if end + 2 <= len(buf) and sum(buf[i + 2:end]) & 0xFFFF == struct.unpack_from("<H", buf, end)[0]:
+                raw_events.append(EVENT.unpack_from(buf, i + 2))
+                i = end + 2
+            else:
+                i += 1
+            continue
+        if buf[i + 1:i + 2] != MAGIC[1:]:
+            i += 1
+            continue
         n, seq, over = HEADER.unpack_from(buf, i + 2)
         body_start = i + 2
         body_end = i + 2 + HEADER.size + n * FRAME.itemsize
@@ -48,12 +62,18 @@ def parse_blocks(buf: bytes):
         last_seq = seq
         i = body_end + 2
     if not times:
-        return np.zeros(0, np.uint64), np.zeros((0, 4), np.uint16), stats
+        return np.zeros(0, np.int64), np.zeros((0, 4), np.uint16), [], stats
     t = np.concatenate(times).astype(np.int64)
     # micros() wraps every ~71.6 minutes
     wraps = np.concatenate([[0], np.cumsum(np.diff(t) < -(1 << 31))])
     t = t + wraps * (1 << 32)
-    return t, np.concatenate(adcs), stats
+    events = []
+    for kind, tu, f in raw_events:
+        te = int(tu)
+        while te < t[0] - (1 << 31):
+            te += 1 << 32
+        events.append({"event": EVENT_NAMES.get(kind, str(kind)), "t_us": te, "freq_hz": float(f)})
+    return t, np.concatenate(adcs), events, stats
 
 
 def encode_blocks(t_us, adc, frames_per_block=50) -> bytes:
@@ -69,8 +89,14 @@ def encode_blocks(t_us, adc, frames_per_block=50) -> bytes:
     return bytes(out)
 
 
+def encode_event(name, t_us, freq=0.0) -> bytes:
+    code = {v: k for k, v in EVENT_NAMES.items()}[name]
+    body = EVENT.pack(code, int(t_us) & 0xFFFFFFFF, freq)
+    return EVENT_MAGIC + body + struct.pack("<H", sum(body) & 0xFFFF)
+
+
 def parse_info(line: str) -> dict:
-    """'INFO,fw=sense-1.0,rate_hz=2000,...' -> dict."""
+    """'INFO,fw=piezo-sweep-2.0,rate_hz=2000,...' -> dict."""
     out = {}
     for part in line.strip().split(",")[1:]:
         if "=" in part:
@@ -107,8 +133,8 @@ def ask(ser, cmd, expect="INFO", timeout=3.0) -> str:
     raise TimeoutError(f"no {expect} reply to '{cmd}' on {ser.port}. Is the right firmware flashed?")
 
 
-class SenseStream:
-    """Reads binary blocks from the sensing board in a background thread."""
+class Stream:
+    """Reads binary blocks from the ESP32 in a background thread."""
 
     def __init__(self, ser):
         self.ser = ser
@@ -139,3 +165,23 @@ class SenseStream:
         self._thread.join(timeout=1)
         self.buf += self.ser.read(self.ser.in_waiting)
         return bytes(self.buf)
+
+
+def record_sweep(ser, duration_s, pre_s=0.5, post_s=0.5):
+    """Stream, play one sweep, stop when the board reports the sweep finished.
+    Returns (t_us, adc, events, stats)."""
+    s = Stream(ser)
+    s.start()
+    time.sleep(pre_s)
+    ser.write(b"sweep\n")
+    deadline = time.time() + duration_s + 5
+    time.sleep(duration_s * 0.9)
+    while time.time() < deadline:
+        _, _, events, _ = parse_blocks(bytes(s.buf[-6000:]))
+        if any(e["event"] in ("sweep_end", "sweep_aborted") for e in events):
+            break
+        time.sleep(0.1)
+    else:
+        print("  warning: the board never reported the end of the sweep")
+    time.sleep(post_s)
+    return parse_blocks(s.stop())

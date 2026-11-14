@@ -97,11 +97,15 @@ def next_repeat(data_dir: Path, meta: dict) -> int:
 
 
 def wide_table(trials: pd.DataFrame, feats: pd.DataFrame) -> pd.DataFrame:
-    """One row per trial: metadata, then amp_<ch>_<f>, phase_<ch>_<f>, snr_<ch>_<f>."""
+    """One row per trial: metadata, then amp_<ch>_<f>, phase_<ch>_<f> (vs drive),
+    phaserel_<ch>_<f> (vs up-right disc), snr_<ch>_<f>."""
     f = feats.copy()
     f["key"] = f["channel"] + "_" + f["freq_hz"].map(lambda v: f"{v:g}")
     parts = []
-    for col, prefix in [("amp", "amp"), ("phase_deg", "phase"), ("snr_db", "snr")]:
+    for col, prefix in [("amp", "amp"), ("phase_deg", "phase"), ("phase_rel_deg", "phaserel"),
+                        ("snr_db", "snr")]:
+        if col not in f or f[col].isna().all():
+            continue
         p = f.pivot_table(index="trial_id", columns="key", values=col, sort=False)
         p.columns = [f"{prefix}_{c}" for c in p.columns]
         parts.append(p)
