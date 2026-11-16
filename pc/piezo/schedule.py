@@ -8,9 +8,9 @@ import numpy as np
 
 @dataclass
 class Sweep:
-    f_start: float = 20.0
-    f_stop: float = 300.0
-    f_step: float = 10.0
+    f_start: float = 50.0
+    f_stop: float = 400.0
+    f_step: float = 14.0
     tone_ms: int = 600
     gap_ms: int = 100
     lead_ms: int = 1000   # silence before the first tone, also used as the noise reference

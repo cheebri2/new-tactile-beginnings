@@ -1,7 +1,7 @@
 # Piezo sweep pipeline
 
 Four piezo discs on silicone over a 3D-printed vertebra. A transducer plays a stepped sine
-sweep (20–300 Hz); the laptop records every disc's raw signal and extracts amplitude and phase
+sweep (50–400 Hz); the laptop records every disc's raw signal and extracts amplitude and phase
 at each frequency. Trials are tagged with test metadata so conditions (blank, object, offset,
 depth, …) can be averaged and compared, and so the data can feed a model later.
 
@@ -12,7 +12,7 @@ pc/              capture.py, process.py, analyze.py (+ piezo/ library, tests/)
 
 ## Hardware (one ESP32)
 
-- Piezos: up_right GPIO34, up_left GPIO35, down_left GPIO32, down_right GPIO33.
+- Piezos: up_right GPIO35, up_left GPIO32, down_left GPIO33, down_right GPIO34.
 - Drive: GPIO25 (DAC) → amp input. The DAC sine sits on ~1.65 V, so the amp input must be AC
   coupled (add a 1–10 µF series cap if it is not).
 - The tone runs on core 0 and the sampling on core 1, both on the same `micros()` clock. The
@@ -25,18 +25,18 @@ pc/              capture.py, process.py, analyze.py (+ piezo/ library, tests/)
 
 ## Run a test
 
-Every trial runs one full sweep (~21 s). Lift and reseat the sensor head between repeats; the
+Every trial runs one full sweep (~19 s). Lift and reseat the sensor head between repeats; the
 spread across reseats is what tells you whether a difference is real.
 
 ```
 cd pc
-python capture.py --port COM3 --test blank --depth 15 --load 200 --repeats 5
-python capture.py --port COM3 --test object --object vertebra --depth 15 --load 200 --repeats 5
-python capture.py --port COM3 --test offset --object vertebra --x 10 --depth 15 --load 200 --repeats 5
+python capture.py --port COM3 --test blank --depth 15 --repeats 5
+python capture.py --port COM3 --test object --object vertebra --depth 15 --repeats 5
+python capture.py --port COM3 --test offset --object vertebra --x 10 --depth 15 --repeats 5
 ```
 
-Metadata flags: `--test` (blank, object, offset, depth, rotation, load, noise, other), `--object`,
-`--x`/`--y` (mm, + = right/up), `--depth` (skin mm), `--rotation` (deg), `--load` (g), `--session`
+Metadata flags: `--test` (blank, object, offset, depth, rotation, noise, other), `--object`,
+`--x`/`--y` (mm, + = right/up), `--depth` (skin mm), `--rotation` (deg), `--session`
 (defaults to today), `--notes`. Sweep flags: `--f-start --f-stop --f-step --tone-ms --amp`.
 Try it without hardware: `python capture.py --simulate --test object --object vertebra --repeats 3`.
 
@@ -47,11 +47,12 @@ After each trial it prints the SNR and peak amplitude per disc, and asks whether
 ```
 python analyze.py                                     # all trials
 python analyze.py --session 2026-11-14 --norm share   # one session, level-independent
-python analyze.py --where "depth_mm == 15" --conditions "blank d=15 load=200" "object vertebra x=0 y=0 d=15 load=200"
+python analyze.py --where "depth_mm == 15" --conditions "blank d=15" "object vertebra x=0 y=0 d=15"
 ```
 
 `--norm`: `none` (ADC counts), `share` (each disc's fraction of the four, cancels overall
-coupling/preload), `blank` (divided by the same session's blank). Output in `results/…/`:
+coupling/preload), `blank` (divided by the same session's blank). Output in `training/results/…/`
+(or `results/…/` for `--data data`):
 
 | file | shows |
 |---|---|
@@ -62,7 +63,10 @@ coupling/preload), `blank` (divided by the same session's blank). Output in `res
 | `trials_pca.png` | each trial on two principal components, with a leave-one-out accuracy |
 | `report.md` | headline numbers; `summary.csv`, `separation.csv`, `pairs.csv` hold the full tables |
 
-## Data (in `pc/data/`)
+## Data (in `pc/training/data/`)
+
+New captures go to `pc/training/data/`. The calibration runs stay in `pc/data/`; reach them with
+`--data data` on `capture.py`, `process.py` or `analyze.py`.
 
 | file | contents |
 |---|---|

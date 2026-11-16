@@ -3,7 +3,7 @@
 //   - core 1: samples the four piezos at a fixed rate and streams the raw counts
 // All processing (amplitude, phase, features) happens on the laptop (pc/).
 //
-// Channels: up_right GPIO34, up_left GPIO35, down_left GPIO32, down_right GPIO33
+// Channels: up_right GPIO35, up_left GPIO32, down_left GPIO33, down_right GPIO34
 //
 // Sweep: lead_ms of silence, then for each frequency f_start, f_start+f_step, ... <= f_stop:
 //   tone_ms of sine (raised-cosine ramp of ramp_ms at both ends, phase 0 at the tone start),
@@ -16,6 +16,7 @@
 //   b            begin streaming
 //   sweep        run one sweep (normally while streaming)
 //   tone <hz>    continuous tone, for setup checks
+//   test [amp]   continuous 150 Hz tone for hardware debugging; amp 0..127 (default cfg amp)
 //   off          stop any tone or sweep
 //   x            stop streaming
 // While streaming the port carries only binary blocks, so replies come as event blocks.
@@ -33,14 +34,15 @@
 #include <math.h>
 
 namespace {
-constexpr uint8_t kPins[4] = {34, 35, 32, 33};  // ur, ul, dl, dr
+constexpr uint8_t kPins[4] = {35, 32, 33, 34};  // ur, ul, dl, dr
 constexpr uint8_t kDacPin = 25;
 constexpr uint32_t kBaud = 921600;
-constexpr const char *kFirmware = "piezo-sweep-2.0";
+constexpr const char *kFirmware = "piezo-sweep-2.3";
+constexpr float kTestHz = 150;
 
 // ---------------------------------------------------------------- sweep settings
 struct Config {
-  float fStart = 20, fStop = 300, fStep = 10;
+  float fStart = 50, fStop = 400, fStep = 14;
   uint32_t toneMs = 600, gapMs = 100, leadMs = 1000;
   uint8_t amp = 100;  // DAC counts around mid-scale 128
   uint32_t rampMs = 10;
@@ -50,6 +52,7 @@ enum class Mode : uint8_t { Idle, Sweep, Tone };
 volatile Mode requested = Mode::Idle;
 volatile bool stopRequested = false;
 volatile float toneHz = 0;
+volatile uint8_t toneAmp = 0;  // amplitude for continuous tones
 
 enum Event : uint8_t { kSweepStart = 1, kToneStart = 2, kToneEnd = 3, kSweepEnd = 4, kSweepAborted = 5 };
 struct EventMsg { uint8_t type; uint32_t tUs; float freq; };
@@ -65,7 +68,7 @@ void postEvent(uint8_t type, uint32_t tUs, float f) {
 }
 
 // Plays f for durMs (0 = until stopped). Returns false if stopped early.
-bool playTone(float f, uint32_t durMs, uint32_t rampMs) {
+bool playTone(float f, uint32_t durMs, uint32_t rampMs, uint8_t amp) {
   const uint32_t t0 = micros();
   postEvent(kToneStart, t0, f);
   const uint32_t durUs = durMs * 1000, rampUs = rampMs * 1000;
@@ -81,7 +84,7 @@ bool playTone(float f, uint32_t durMs, uint32_t rampMs) {
     }
     const float cycles = f * (dt * 1e-6f);
     const uint32_t idx = uint32_t((cycles - floorf(cycles)) * kTable) % kTable;
-    dacWrite(kDacPin, uint8_t(128 + int(cfg.amp * env * sineTable[idx])));
+    dacWrite(kDacPin, uint8_t(128 + int(amp * env * sineTable[idx])));
   }
   dacWrite(kDacPin, 128);
   postEvent(kToneEnd, micros(), f);
@@ -105,7 +108,7 @@ void driveTask(void *) {
     }
     stopRequested = false;
     if (m == Mode::Tone) {
-      playTone(toneHz, 0, 0);
+      playTone(toneHz, 0, 0, toneAmp);
     } else {
       bool ok = true;
       postEvent(kSweepStart, micros(), 0);
@@ -113,7 +116,7 @@ void driveTask(void *) {
       for (int k = 0; ok; ++k) {
         const float f = cfg.fStart + k * cfg.fStep;
         if (f > cfg.fStop + 1e-3f) break;
-        ok = playTone(f, cfg.toneMs, cfg.rampMs) && silenceFor(cfg.gapMs);
+        ok = playTone(f, cfg.toneMs, cfg.rampMs, cfg.amp) && silenceFor(cfg.gapMs);
       }
       postEvent(ok ? kSweepEnd : kSweepAborted, micros(), 0);
     }
@@ -188,7 +191,7 @@ void measureAdcSpacing() {
 }
 
 void printInfo() {
-  Serial.printf("INFO,fw=%s,rate_hz=%lu,channels=ur;ul;dl;dr,pins=34;35;32;33,dac_pin=25,"
+  Serial.printf("INFO,fw=%s,rate_hz=%lu,channels=ur;ul;dl;dr,pins=35;32;33;34,dac_pin=25,"
                 "adc_read_us=%.2f,f_start=%.2f,f_stop=%.2f,f_step=%.2f,tone_ms=%lu,gap_ms=%lu,"
                 "lead_ms=%lu,amp=%u,ramp_ms=%lu\n",
                 kFirmware, (unsigned long)sampleRateHz, adcReadUs, cfg.fStart, cfg.fStop,
@@ -222,10 +225,22 @@ void handleCommand(String cmd) {
   } else if (cmd == "off") {
     stopRequested = true;
     reply("OK,off");
+  } else if (cmd.startsWith("test")) {
+    const String arg = cmd.substring(4);
+    const long amp = arg.length() ? arg.toInt() : cfg.amp;
+    if (amp >= 0 && amp <= 127 && requested == Mode::Idle) {
+      toneHz = kTestHz;
+      toneAmp = amp;
+      requested = Mode::Tone;
+      if (!streaming) Serial.printf("OK,test 150 Hz amp=%ld (send off to stop)\n", amp);
+    } else {
+      reply("ERR,test needs amp 0..127 and no sweep or tone running");
+    }
   } else if (cmd.startsWith("tone")) {
     const float f = cmd.substring(4).toFloat();
     if (f >= 1 && f <= 2000 && requested == Mode::Idle) {
       toneHz = f;
+      toneAmp = cfg.amp;
       requested = Mode::Tone;
       reply("OK,tone (send off to stop)");
     } else {
@@ -275,8 +290,7 @@ void setup() {
   Serial.setTxBufferSize(8192);
   Serial.begin(kBaud);
   analogReadResolution(12);
-  for (uint8_t pin : kPins) analogSetPinAttenuation(pin, ADC_11db);
-  for (uint32_t i = 0; i < kTable; ++i) sineTable[i] = sinf(2 * PI * i / kTable);
+  for (uint8_t pin : kPins) analogSetPinAttenuation(pin, ADC_11db);  for (uint32_t i = 0; i < kTable; ++i) sineTable[i] = sinf(2 * PI * i / kTable);
   dacWrite(kDacPin, 128);
   eventQueue = xQueueCreate(32, sizeof(EventMsg));
   delay(200);

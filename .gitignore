@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 pc/data/
 pc/results/
+pc/training/

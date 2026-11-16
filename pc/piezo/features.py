@@ -14,7 +14,7 @@ Steps:
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
-from . import CHANNELS, REF_CHANNEL
+from . import CHANNELS, DISABLED_CHANNELS, REF_CHANNEL
 from .schedule import Sweep
 
 HIGHPASS_HZ = 10.0
@@ -127,6 +127,8 @@ def extract(t_us, adc, sweep: Sweep, adc_read_us=0.0, events=None):
             fits.append((z, resid, abs(zn)))
         zref = fits[ref][0]
         for ch, (z, resid, noise) in enumerate(fits):
+            if CHANNELS[ch] in DISABLED_CHANNELS:
+                continue
             amp = abs(z)
             rel = np.angle(z * np.conj(zref)) if abs(zref) > 0 else np.nan
             rows.append({

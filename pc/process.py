@@ -3,8 +3,8 @@
 Run this after changing the feature code, or after editing a trial's .json
 (e.g. fixing a wrong offset in the metadata).
 
-  python process.py            # uses ./data
-  python process.py --data D:/piezo/data
+  python process.py            # uses ./training/data
+  python process.py --data data  # the calibration runs
 """
 
 import argparse
@@ -12,14 +12,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from piezo import store
+from piezo import DATA_DIR, store
 from piezo.features import extract
 from piezo.schedule import Sweep
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--data", default="data")
+    p.add_argument("--data", default=DATA_DIR)
     data = Path(p.parse_args().data)
 
     trial_rows, feat_rows = [], []

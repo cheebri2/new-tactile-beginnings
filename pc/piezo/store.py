@@ -21,8 +21,8 @@ import pandas as pd
 from . import CHANNELS
 
 META_FIELDS = ["test_type", "object", "x_mm", "y_mm", "depth_mm", "rotation_deg",
-               "load_g", "session", "repeat", "notes"]
-CONDITION_FIELDS = ["test_type", "object", "x_mm", "y_mm", "depth_mm", "rotation_deg", "load_g"]
+               "session", "repeat", "notes"]
+CONDITION_FIELDS = ["test_type", "object", "x_mm", "y_mm", "depth_mm", "rotation_deg"]
 
 
 def condition_label(meta: dict) -> str:
@@ -33,7 +33,7 @@ def condition_label(meta: dict) -> str:
         parts.append(str(obj))
     has_object = obj not in (None, "", "none")
     for key, short in [("x_mm", "x"), ("y_mm", "y"), ("depth_mm", "d"),
-                       ("rotation_deg", "rot"), ("load_g", "load")]:
+                       ("rotation_deg", "rot")]:
         v = meta.get(key)
         if v is None or v != v or v == "":
             continue

@@ -5,7 +5,8 @@
   python analyze.py --where "depth_mm == 15" --test blank object offset
   python analyze.py --conditions "blank d=15" "object vertebra d=15"   # pick and order conditions
 
-Writes to results/<name>/:
+Reads training/data by default (--data data for the calibration runs).
+Writes to results/<name>/ next to the data folder (training/results/ by default):
   amplitude.png       mean +/- SD per condition for each disc (thin lines = individual repeats)
   phase.png           phase lag behind the drive signal, circular mean +/- SD
   repeatability.png   between-condition / within-condition spread per disc and frequency
@@ -27,7 +28,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from piezo import CHANNEL_NAMES, CHANNELS, REF_CHANNEL, stats
+from piezo import ACTIVE_CHANNELS as CHANNELS, CHANNEL_NAMES, DATA_DIR, REF_CHANNEL, stats
 
 # Fixed categorical order (colourblind-checked); a condition keeps its colour in every figure.
 PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
@@ -39,11 +40,11 @@ YLABEL = {"none": "amplitude (ADC counts, peak)", "share": "share of 4-disc tota
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--data", default="data")
-    p.add_argument("--out", help="output folder (default results/<norm>_<sessions>)")
+    p.add_argument("--data", default=DATA_DIR, help=f"data folder (default ./{DATA_DIR})")
+    p.add_argument("--out", help="output folder (default results/<norm>_<sessions> next to the data folder)")
     p.add_argument("--session", nargs="*", help="only these sessions")
     p.add_argument("--test", nargs="*", help="only these test types")
-    p.add_argument("--where", help='pandas query on trial metadata, e.g. "depth_mm == 15 and load_g == 200"')
+    p.add_argument("--where", help='pandas query on trial metadata, e.g. "depth_mm == 15 and x_mm == 0"')
     p.add_argument("--conditions", nargs="*", help="only these condition labels, in this order")
     p.add_argument("--norm", choices=["none", "share", "blank"], default="none",
                    help="none: raw counts; share: fraction of the 4 discs; blank: / same-session blank")
@@ -60,6 +61,9 @@ def setup_axes(title):
         ax.set_axisbelow(True)
         for s in ("top", "right"):
             ax.spines[s].set_visible(False)
+    for ch, pos in LAYOUT.items():
+        if ch not in CHANNELS:  # disabled disc: leave its panel blank
+            axes[pos].set_visible(False)
     return fig, axes
 
 
@@ -230,7 +234,8 @@ def main():
     if trials.empty:
         raise SystemExit("No trials match those filters. Conditions available:\n  "
                          + "\n  ".join(pd.read_csv(data / "trials.csv").condition.unique()))
-    feats = feats[feats.trial_id.isin(trials.trial_id) & feats.freq_hz.between(a.fmin, a.fmax)]
+    feats = feats[feats.trial_id.isin(trials.trial_id) & feats.freq_hz.between(a.fmin, a.fmax)
+                  & feats.channel.isin(CHANNELS)]
     f = stats.normalise(feats, trials, a.norm)
     f = f.merge(trials[["trial_id", "condition"]], on="trial_id")
     # Phase vs the drive when the board logged tone timing; vs the up-right disc for old data.
@@ -243,7 +248,7 @@ def main():
     colors = {c: PALETTE[i] for i, c in enumerate(conds)}
 
     sessions = "_".join(sorted(trials.session.astype(str).unique()))[:60]
-    out = Path(a.out or f"results/{a.norm}_{sessions}")
+    out = Path(a.out or data.parent / "results" / f"{a.norm}_{sessions}")
     out.mkdir(parents=True, exist_ok=True)
 
     summary = stats.condition_summary(f)

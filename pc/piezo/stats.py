@@ -109,7 +109,9 @@ def pairwise(f: pd.DataFrame, conditions) -> pd.DataFrame:
                          "ratio_b_over_a": float(np.exp(xb.mean() - xa.mean())),
                          "d": (xb.mean() - xa.mean()) / sp if sp > 0 else np.nan,
                          "overlap": bool(min(xa.max(), xb.max()) >= max(xa.min(), xb.min()))})
-    return pd.DataFrame(rows)
+    # Keep the columns even with no comparable pairs (one condition, or <2 repeats each).
+    return pd.DataFrame(rows, columns=["cond_a", "cond_b", "channel", "freq_hz",
+                                       "ratio_b_over_a", "d", "overlap"])
 
 
 def trial_matrix(f: pd.DataFrame):

@@ -20,12 +20,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from piezo import CHANNELS, stream, store
+from piezo import ACTIVE_CHANNELS, DATA_DIR, stream, store
 from piezo.features import extract
 from piezo.schedule import Sweep
 from piezo import simulate
 
-TEST_TYPES = ["blank", "object", "offset", "depth", "rotation", "load", "noise", "other"]
+TEST_TYPES = ["blank", "object", "offset", "depth", "rotation", "noise", "other"]
 
 
 def parse_args():
@@ -42,7 +42,6 @@ def parse_args():
     m.add_argument("--y", type=float, default=0.0, help="object offset up/down from centre, mm (+ = up)")
     m.add_argument("--depth", type=float, help="skin thickness over the object, mm")
     m.add_argument("--rotation", type=float, default=0.0, help="sensor head rotation, degrees")
-    m.add_argument("--load", type=float, help="weight/preload on the sensor head, g")
     m.add_argument("--session", default=dt.date.today().isoformat(), help="session name (default today)")
     m.add_argument("--notes", default="", help="free text saved with every trial")
     m.add_argument("--calibration", default="", help="calibration file used, if any")
@@ -55,7 +54,7 @@ def parse_args():
     s.add_argument("--tone-ms", type=int, default=Sweep.tone_ms)
     s.add_argument("--gap-ms", type=int, default=Sweep.gap_ms)
     s.add_argument("--amp", type=int, default=Sweep.amp, help="drive amplitude, DAC counts 0..127")
-    p.add_argument("--data", default="data", help="data folder (default ./data)")
+    p.add_argument("--data", default=DATA_DIR, help=f"data folder (default ./{DATA_DIR})")
     return p.parse_args()
 
 
@@ -65,7 +64,7 @@ def main():
     sweep = Sweep(f_start=a.f_start, f_stop=a.f_stop, f_step=a.f_step, tone_ms=a.tone_ms,
                   gap_ms=a.gap_ms, amp=a.amp)
     meta_base = {"test_type": a.test, "object": a.object, "x_mm": a.x, "y_mm": a.y,
-                 "depth_mm": a.depth, "rotation_deg": a.rotation, "load_g": a.load,
+                 "depth_mm": a.depth, "rotation_deg": a.rotation,
                  "session": a.session, "notes": a.notes, "calibration": a.calibration,
                  "sweep": sweep.to_dict()}
 
@@ -116,10 +115,10 @@ def main():
         feats = pd.DataFrame(rows)
         snr = feats.groupby("channel")["snr_db"].median()
         print(f"  {len(t_us)} samples at {info['fs_hz']:.0f} Hz, sweep started at {info['sweep_start_s']:.2f} s")
-        print("  median SNR dB: " + "  ".join(f"{c}={snr[c]:.0f}" for c in CHANNELS))
+        print("  median SNR dB: " + "  ".join(f"{c}={snr[c]:.0f}" for c in ACTIVE_CHANNELS))
         print("  peak amp:      " + "  ".join(
             f"{c}={feats[feats.channel == c].amp.max():.1f}@{feats.loc[feats[feats.channel == c].amp.idxmax(), 'freq_hz']:g}Hz"
-            for c in CHANNELS))
+            for c in ACTIVE_CHANNELS))
         if info["timing"] != "events" or stats["lost_blocks"] or stats["bad_blocks"]:
             print("  WARNING: missing sweep events or lost data (USB cable/port?).")
         if snr.min() < 10:
