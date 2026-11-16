@@ -42,6 +42,29 @@ Try it without hardware: `python capture.py --simulate --test object --object ve
 
 After each trial it prints the SNR and peak amplitude per disc, and asks whether to keep it.
 
+## Live alignment test (blank calibration + centred template)
+
+```
+cd pc
+python align_test.py --port COM3                               # baseline, then one test per placement
+python align_test.py --port COM3 --plan -10 -5 0 5 10 --reps 2 # shuffled placements, tells you where to put it
+python align_test.py --replay data                             # re-run the method on the calibration runs
+python build_template.py --out models/centred_template.json    # rebuild from training/data
+```
+
+1. **Baseline**: 3 sweeps on blank silicone (`--baseline-sweeps`), same pressure as the test. `b` redoes it.
+2. **Test**: put the head over the vertebra, type the true x (mm), Enter. It prints ALIGNED / NOT ALIGNED,
+   the distance from the centred template vs the bound (`--bound`, default 1.4), and the closest trained
+   offset as a rough x.
+3. Every sweep is saved to `training/data/` like `capture.py` (with the prediction in the trial's JSON),
+   plus one line per test in `training/data/predictions.csv`, so each run is new training data.
+
+Method (`piezo/align.py`): change from the blank in log10 amplitude and phase for up-left and down-left
+(down-right is disabled, up-right is insensitive to x), 50-400 Hz. Distance = RMS z-score vs the mean
+centred change, each feature scaled by repeat spread plus blank-to-blank drift. The shipped template,
+`models/centred_template_2026-11-15.json`, comes from one session (25 vertebra trials at x = -10..+10 mm,
+depth 15 mm). Replaying that session gives 23/25 correct, but that is in-sample; +5 mm sits on the bound.
+
 ## Compare conditions
 
 ```
