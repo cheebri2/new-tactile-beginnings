@@ -1,0 +1,340 @@
+{
+  "object": "vertebra",
+  "y_mm": 0.0,
+  "depth_mm": 15.0,
+  "rotation_deg": 0.0,
+  "session": "2026-11-15",
+  "notes": "align_test",
+  "calibration": "centred_template_2026-11-15.json",
+  "sweep": {
+    "f_start": 50.0,
+    "f_stop": 400.0,
+    "f_step": 14.0,
+    "tone_ms": 600,
+    "gap_ms": 100,
+    "lead_ms": 1000,
+    "amp": 100,
+    "ramp_ms": 10,
+    "settle_ms": 150,
+    "tail_ms": 50
+  },
+  "x_mm": 0.0,
+  "test_type": "object",
+  "prediction": {
+    "distance": 1.3859510861337858,
+    "bound": 1.4,
+    "aligned": true,
+    "nearest_x": 0.0,
+    "est_x": 0.43885930860720695,
+    "side": "centred",
+    "dists": {
+      "-10": 2.48052371337027,
+      "-5": 2.067533687510497,
+      "0": 1.3859510861337858,
+      "5": 2.2755743694166295,
+      "10": 1.8474782867742343
+    }
+  },
+  "baseline_trials": [
+    "20261115-233009_blank_r26",
+    "20261115-233036_blank_r27",
+    "20261115-233100_blank_r28"
+  ],
+  "trial_id": "20261115-233729_object_r07",
+  "time": "2026-11-15T23:37:29",
+  "repeat": 7,
+  "stream": {
+    "blocks": 813,
+    "bad_blocks": 0,
+    "lost_blocks": 0,
+    "overruns": 0
+  },
+  "board_info": {
+    "fw": "piezo-sweep-2.3",
+    "rate_hz": 2000.0,
+    "channels": "ur;ul;dl;dr",
+    "pins": "35;32;33;34",
+    "dac_pin": 25.0,
+    "adc_read_us": 94.29,
+    "f_start": 50.0,
+    "f_stop": 400.0,
+    "f_step": 14.0,
+    "tone_ms": 600.0,
+    "gap_ms": 100.0,
+    "lead_ms": 1000.0,
+    "amp": 100.0,
+    "ramp_ms": 10.0
+  },
+  "events": [
+    {
+      "event": "sweep_start",
+      "t_us": 863888551,
+      "freq_hz": 0.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 864888558,
+      "freq_hz": 50.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 865488623,
+      "freq_hz": 50.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 865588632,
+      "freq_hz": 64.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 866188729,
+      "freq_hz": 64.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 866288740,
+      "freq_hz": 78.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 866888788,
+      "freq_hz": 78.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 866988799,
+      "freq_hz": 92.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 867588858,
+      "freq_hz": 92.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 867688867,
+      "freq_hz": 106.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 868288915,
+      "freq_hz": 106.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 868388928,
+      "freq_hz": 120.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 868988984,
+      "freq_hz": 120.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 869088992,
+      "freq_hz": 134.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 869689078,
+      "freq_hz": 134.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 869789086,
+      "freq_hz": 148.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 870389131,
+      "freq_hz": 148.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 870489143,
+      "freq_hz": 162.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 871089209,
+      "freq_hz": 162.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 871189217,
+      "freq_hz": 176.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 871789275,
+      "freq_hz": 176.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 871889283,
+      "freq_hz": 190.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 872489363,
+      "freq_hz": 190.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 872589373,
+      "freq_hz": 204.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 873189460,
+      "freq_hz": 204.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 873289467,
+      "freq_hz": 218.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 873889522,
+      "freq_hz": 218.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 873989532,
+      "freq_hz": 232.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 874589591,
+      "freq_hz": 232.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 874689598,
+      "freq_hz": 246.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 875289644,
+      "freq_hz": 246.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 875389657,
+      "freq_hz": 260.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 875989691,
+      "freq_hz": 260.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 876089704,
+      "freq_hz": 274.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 876689732,
+      "freq_hz": 274.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 876789741,
+      "freq_hz": 288.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 877389775,
+      "freq_hz": 288.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 877489782,
+      "freq_hz": 302.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 878089859,
+      "freq_hz": 302.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 878189870,
+      "freq_hz": 316.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 878789930,
+      "freq_hz": 316.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 878889942,
+      "freq_hz": 330.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 879490005,
+      "freq_hz": 330.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 879590012,
+      "freq_hz": 344.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 880190078,
+      "freq_hz": 344.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 880290086,
+      "freq_hz": 358.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 880890126,
+      "freq_hz": 358.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 880990138,
+      "freq_hz": 372.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 881590202,
+      "freq_hz": 372.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 881690212,
+      "freq_hz": 386.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 882290275,
+      "freq_hz": 386.0
+    },
+    {
+      "event": "tone_start",
+      "t_us": 882390286,
+      "freq_hz": 400.0
+    },
+    {
+      "event": "tone_end",
+      "t_us": 882990341,
+      "freq_hz": 400.0
+    },
+    {
+      "event": "sweep_end",
+      "t_us": 883090352,
+      "freq_hz": 0.0
+    }
+  ]
+}
