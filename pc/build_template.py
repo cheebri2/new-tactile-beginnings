@@ -4,6 +4,7 @@ Needs a data folder recorded as blank blocks, each followed by an object block a
 offset (the 2026-11-15 layout). Every object trial is compared with the blank block
 just before it.
 
+  python build_template.py --out models/centred_template.json          # training/data
   python build_template.py --data data --out models/centred_template.json
   python build_template.py --data data --session 2026-11-15 --where "depth_mm == 15"
 """
@@ -14,12 +15,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from piezo import align
+from piezo import DATA_DIR, align
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--data", default="data")
+    p.add_argument("--data", default=DATA_DIR, help=f"data folder (default ./{DATA_DIR})")
     p.add_argument("--out", default="models/centred_template.json")
     p.add_argument("--session", nargs="*", help="only these sessions")
     p.add_argument("--where", help="pandas query on trials.csv, e.g. \"depth_mm == 15\"")

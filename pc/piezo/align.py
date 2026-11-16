@@ -92,7 +92,7 @@ def build_template(trials: pd.DataFrame, feats: pd.DataFrame, channels=DEFAULT_C
 
     per_trial = {tid: g for tid, g in feats.groupby("trial_id")}
     dla, dph, xs, blank_la, blank_ph = [], [], [], [], []
-    base = None
+    base, base_block = None, None
     for _, r in t.iterrows():
         g = per_trial.get(r.trial_id)
         if g is None:

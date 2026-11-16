@@ -3,7 +3,7 @@
   python align_test.py --port COM3                         # live, uses the shipped template
   python align_test.py --port COM3 --plan -10 -5 0 5 10 --reps 2   # tells you where to place it, random order
   python align_test.py --simulate                          # no hardware (fake data, checks the flow only)
-  python align_test.py --replay data                       # re-run the method on saved trials
+  python align_test.py --replay data                       # re-run the method on saved trials (calibration runs)
 
 Steps:
 1. Baseline: the sensor head on blank silicone (no vertebra), same pressure you will use for
@@ -12,7 +12,7 @@ Steps:
    is labelled, press Enter. After the sweep (~37 s) it prints:
      ALIGNED / NOT ALIGNED, the distance from the centred template vs the bound, and the
      closest trained offset as a rough x estimate.
-3. Every sweep (baselines too) is saved like capture.py does, with the true x and the
+3. Every sweep (baselines too) is saved like capture.py does (to training/data by default), with the true x and the
    prediction, so this run becomes new training data. predictions.csv gets one line per test.
 
 The template (models/centred_template_2026-11-15.json) was learned from one session of
@@ -26,10 +26,9 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
-from piezo import CHANNELS, align, simulate, store, stream
+from piezo import ACTIVE_CHANNELS, DATA_DIR, align, simulate, store, stream
 from piezo.features import extract
 from piezo.schedule import Sweep
 
@@ -48,10 +47,9 @@ def parse_args():
     p.add_argument("--plan", type=float, nargs="+", help="x offsets to test, shuffled for you")
     p.add_argument("--reps", type=int, default=1, help="repeats of each --plan offset")
     p.add_argument("--depth", type=float, help="skin thickness, mm (default: the template's)")
-    p.add_argument("--load", type=float, help="weight/preload on the sensor head, g")
     p.add_argument("--session", default=dt.date.today().isoformat())
     p.add_argument("--notes", default="")
-    p.add_argument("--data", default="data", help="where trials are saved (default ./data)")
+    p.add_argument("--data", default=DATA_DIR, help=f"where trials are saved (default ./{DATA_DIR})")
     p.add_argument("--rate", type=int, default=2000)
     return p.parse_args()
 
@@ -145,15 +143,11 @@ class Rig:
         info.update({f"stream_{k}": v for k, v in stats.items()})
         feats = pd.DataFrame(rows)
         snr = feats.groupby("channel")["snr_db"].median()
-        print("  median SNR dB: " + "  ".join(f"{c}={snr[c]:.0f}" for c in CHANNELS))
+        print("  median SNR dB: " + "  ".join(f"{c}={snr[c]:.0f}" for c in ACTIVE_CHANNELS))
         if snr[list(align.DEFAULT_CHANNELS)].min() < 10:
             print("  WARNING: up-left or down-left under 10 dB SNR. Check contact and that the amp is on.")
         if info["timing"] != "events" or stats["lost_blocks"] or stats["bad_blocks"]:
             print("  WARNING: missing sweep events or lost data (USB cable/port?).")
-        rest = np.median(np.asarray(adc, float), axis=0)
-        if rest[CHANNELS.index("dr")] < 1200:
-            print(f"  note: down-right rests at {rest[CHANNELS.index('dr')]:.0f} counts (front end fault); "
-                  "it is not used.")
         return t_us, adc, events, stats, info, feats
 
     def save(self, meta, t_us, adc, events, stats, info, feats):
@@ -202,7 +196,7 @@ def live(a, tpl):
     sweep = Sweep.from_dict(tpl["sweep"])
     rig = Rig(a, sweep)
     meta_base = {"object": "vertebra", "y_mm": 0.0, "depth_mm": a.depth or tpl.get("depth_mm"),
-                 "rotation_deg": 0.0, "load_g": a.load, "session": a.session, "notes": a.notes,
+                 "rotation_deg": 0.0, "session": a.session, "notes": a.notes,
                  "calibration": Path(a.template).name, "sweep": sweep.to_dict()}
     plan = [x for x in (a.plan or []) for _ in range(a.reps)]
     random.shuffle(plan)
