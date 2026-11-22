@@ -12,7 +12,9 @@
 //   - Each slide is one segment. Velocity must be 0 at both ends, so the velocity left
 //     over at the end is drift; it is removed as a linear ramp over the segment
 //     (position correction = v_end * T / 2).
-//   - Accelerometer bias is re-estimated (sensor frame) during every still period.
+//   - Accelerometer and gyro offsets are learned (sensor frame) whenever the readings are
+//     steady, i.e. not changing, even if the offset itself is large. An uncalibrated BNO055
+//     can read 0.3+ m/s^2 and a few deg/s at rest, which must not count as "moving".
 // Expect centimetre-level, not millimetre-level, accuracy, and worse for slow creeping
 // moves (constant velocity looks "still"). Quick slides of 0.3-3 s work best. The x/y
 // you type in capture.py stays the ground truth; the IMU estimate is saved next to it.
@@ -41,7 +43,10 @@ class Tracker {
   float stillGyroDps = 3.0f;    // |gyro| below this ...
   float stillAccMs2 = 0.25f;    // ... and |acc - bias| below this ...
   uint16_t stillSamples = 25;   // ... for this many samples (0.25 s at 100 Hz) = still
-  float biasAlpha = 0.02f;      // bias low-pass while still
+  float biasAlpha = 0.05f;      // offset low-pass while steady
+  float steadyAccMs2 = 0.3f;    // steady = |acc - its fast average| below this ...
+  float steadyGyroDps = 1.5f;   // ... and |gyro - its fast average| below this ...
+  uint16_t steadySamples = 50;  // ... for 0.5 s: offsets are learned then
   float longMoveS = 5.0f;       // segments longer than this are flagged (drift grows as T^2)
 
   // Ask to zero at the next confirmed-still sample. Returns via zeroDone().
@@ -49,6 +54,9 @@ class Tracker {
   bool zeroPending() const { return zeroPending_; }
   bool zeroDone() { bool d = zeroDone_; zeroDone_ = false; return d; }
   bool zeroed() const { return zeroed_; }
+  // Last offset-corrected |acc| (m/s^2) and |gyro| (deg/s), for diagnostics.
+  float accDev() const { return accDev_; }
+  float gyroDev() const { return gyroDev_; }
 
   // One IMU sample. q = w,x,y,z sensor->world; lia/grv sensor frame m/s^2; gyro deg/s.
   // driveOn = the amp is playing (the protocol says the head is still during a sweep).
@@ -59,17 +67,38 @@ class Tracker {
     lastT_ = tUs;
     haveT_ = true;
 
-    // Still detection
-    const float gyroN = sqrtf(gyro[0] * gyro[0] + gyro[1] * gyro[1] + gyro[2] * gyro[2]);
+    // Steady detection (readings not changing; offsets don't matter) -> learn offsets.
+    if (!haveEma_) {
+      for (int k = 0; k < 3; ++k) { emaAcc_[k] = bias_[k] = lia[k]; emaGyro_[k] = gyroBias_[k] = gyro[k]; }
+      haveEma_ = true;
+    }
+    float jA = 0, jG = 0;
+    for (int k = 0; k < 3; ++k) {
+      jA += (lia[k] - emaAcc_[k]) * (lia[k] - emaAcc_[k]);
+      jG += (gyro[k] - emaGyro_[k]) * (gyro[k] - emaGyro_[k]);
+      emaAcc_[k] += 0.2f * (lia[k] - emaAcc_[k]);
+      emaGyro_[k] += 0.2f * (gyro[k] - emaGyro_[k]);
+    }
+    const bool steady = sqrtf(jA) < steadyAccMs2 && sqrtf(jG) < steadyGyroDps;
+    steadyCount_ = steady ? (steadyCount_ < 60000 ? steadyCount_ + 1 : steadyCount_) : 0;
+    // Mid-slide, only a long steady stretch (2 s) counts, so a smooth slide is not learned
+    // as an offset; it still frees a slide stuck "moving" because the offset shifted.
+    const uint16_t need = moving_ ? 4 * steadySamples : steadySamples;
+    if (steadyCount_ >= need && !driveOn) {
+      for (int k = 0; k < 3; ++k) {
+        bias_[k] += biasAlpha * (lia[k] - bias_[k]);
+        gyroBias_[k] += biasAlpha * (gyro[k] - gyroBias_[k]);
+      }
+    }
+
+    // Still detection: offset-corrected readings near zero.
     float a[3] = {lia[0] - bias_[0], lia[1] - bias_[1], lia[2] - bias_[2]};
-    const float accN = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
-    const bool quiet = gyroN < stillGyroDps && accN < stillAccMs2;
+    const float g[3] = {gyro[0] - gyroBias_[0], gyro[1] - gyroBias_[1], gyro[2] - gyroBias_[2]};
+    accDev_ = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+    gyroDev_ = sqrtf(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
+    const bool quiet = gyroDev_ < stillGyroDps && accDev_ < stillAccMs2;
     stillCount_ = quiet ? (stillCount_ < 60000 ? stillCount_ + 1 : stillCount_) : 0;
     const bool still = driveOn || stillCount_ >= stillSamples;
-
-    if (still && !driveOn) {
-      for (int k = 0; k < 3; ++k) bias_[k] += biasAlpha * (lia[k] - bias_[k]);
-    }
 
     if (zeroPending_ && stillCount_ >= stillSamples) {
       for (int k = 0; k < 4; ++k) q0_[k] = q[k];
@@ -171,7 +200,10 @@ class Tracker {
   bool zeroPending_ = false, zeroDone_ = false, zeroed_ = false, moving_ = false;
   bool longMove_ = false, gravityOdd_ = false, haveT_ = false;
   uint32_t lastT_ = 0;
-  uint16_t stillCount_ = 0;
+  uint16_t stillCount_ = 0, steadyCount_ = 0;
+  bool haveEma_ = false;
+  float emaAcc_[3] = {0, 0, 0}, emaGyro_[3] = {0, 0, 0}, gyroBias_[3] = {0, 0, 0};
+  float accDev_ = 0, gyroDev_ = 0;
   float q0_[4] = {1, 0, 0, 0}, psi0_ = 0;
   float bias_[3] = {0, 0, 0};
   float pos_[2] = {0, 0}, vel_[2] = {0, 0}, seg_[2] = {0, 0}, segT_ = 0;

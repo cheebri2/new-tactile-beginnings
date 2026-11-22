@@ -154,3 +154,26 @@ def test_angles_are_relative_to_the_zero_pose():
     q1 = imu._mul(q0, np.array([math.cos(turn), 0, 0, math.sin(turn)]))
     out = tr.update(31 * 10_000, q1, [0, 0, 0], [0, 0, 9.81], [0, 0, 0])
     assert abs(out["yaw_deg"] - 10) < 1e-3
+
+
+def test_zero_works_with_large_uncalibrated_offsets():
+    """Regression: an uncalibrated BNO055 at rest reads e.g. 0.4 m/s^2 and 2.5 deg/s. That is
+    not motion; the board used to wait for |acc| < 0.25 forever and report 'never held still'."""
+    rng = np.random.default_rng(3)
+    tr = imu.Tracker()
+    tr.request_zero()
+    q = np.array([1.0, 0, 0, 0])
+    for k in range(300):  # 3 s at rest
+        lia = np.array([0.35, -0.2, 0.1]) + rng.normal(0, 0.03, 3)
+        gyro = np.array([2.5, -1.0, 0.8]) + rng.normal(0, 0.1, 3)
+        out = tr.update(k * 10_000, q, lia, [0, 0, 9.81], gyro)
+        if out["zeroed"]:
+            break
+    assert out["zeroed"], (tr.acc_dev, tr.gyro_dev)
+    assert k < 150  # within about 1.5 s
+
+
+def test_tracker_with_offsets_still_tracks_slides():
+    truth, est = simulate_session(bias=(0.35, -0.2, 0.1))
+    assert max(sweep_errors(truth, est)) < 5.0
+

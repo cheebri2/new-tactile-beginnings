@@ -175,13 +175,19 @@ class Tracker:
     still_gyro_dps = 3.0
     still_acc_ms2 = 0.25
     still_samples = 25
-    bias_alpha = 0.02
+    bias_alpha = 0.05
+    steady_acc_ms2 = 0.3
+    steady_gyro_dps = 1.5
+    steady_samples = 50
     long_move_s = 5.0
 
     def __init__(self):
         self.zero_pending = self.zeroed = self.moving = self.long_move = self.gravity_odd = False
         self.last_t = None
-        self.still_count = 0
+        self.still_count = self.steady_count = 0
+        self.ema_acc = self.ema_gyro = None
+        self.gyro_bias = np.zeros(3)
+        self.acc_dev = self.gyro_dev = 0.0
         self.q0, self.psi0 = np.array([1.0, 0, 0, 0]), 0.0
         self.bias = np.zeros(3)
         self.pos, self.vel, self.seg, self.seg_t = np.zeros(2), np.zeros(2), np.zeros(2), 0.0
@@ -201,12 +207,27 @@ class Tracker:
             dt = 0.0
         self.last_t = t_us
 
+        if self.ema_acc is None:
+            self.ema_acc, self.bias = lia.copy(), lia.copy()
+            self.ema_gyro, self.gyro_bias = gyro.copy(), gyro.copy()
+        steady = (np.linalg.norm(lia - self.ema_acc) < self.steady_acc_ms2
+                  and np.linalg.norm(gyro - self.ema_gyro) < self.steady_gyro_dps)
+        self.ema_acc = self.ema_acc + 0.2 * (lia - self.ema_acc)
+        self.ema_gyro = self.ema_gyro + 0.2 * (gyro - self.ema_gyro)
+        self.steady_count = self.steady_count + 1 if steady else 0
+        # Mid-slide, only a long steady stretch (2 s) counts, so a smooth slide is not learned
+        # as an offset; it still frees a slide stuck "moving" because the offset shifted.
+        need = 4 * self.steady_samples if self.moving else self.steady_samples
+        if self.steady_count >= need and not drive_on:
+            self.bias = self.bias + self.bias_alpha * (lia - self.bias)
+            self.gyro_bias = self.gyro_bias + self.bias_alpha * (gyro - self.gyro_bias)
+
         a = lia - self.bias
-        quiet = np.linalg.norm(gyro) < self.still_gyro_dps and np.linalg.norm(a) < self.still_acc_ms2
+        self.acc_dev = float(np.linalg.norm(a))
+        self.gyro_dev = float(np.linalg.norm(gyro - self.gyro_bias))
+        quiet = self.gyro_dev < self.still_gyro_dps and self.acc_dev < self.still_acc_ms2
         self.still_count = self.still_count + 1 if quiet else 0
         still = drive_on or self.still_count >= self.still_samples
-        if still and not drive_on:
-            self.bias += self.bias_alpha * (lia - self.bias)
 
         if self.zero_pending and self.still_count >= self.still_samples:
             self.q0 = q.copy()

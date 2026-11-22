@@ -76,13 +76,19 @@ while the head is sliding, forces the velocity to zero whenever the head is stil
 playing, removes the leftover velocity of each slide as a linear drift, and re-learns the bias
 while still (`firmware/esp32/src/tracker.h`; same algorithm in `pc/piezo/imu.py`). On simulated
 moves with BNO055-like noise and bias (`tests/test_imu.py`) the error after each slide is about
-1 mm for 0.5–1 s slides, up to ~10 mm for 2 s slides and up to ~40 mm for slow 4 s creeps. The real
+1 mm for 0.5–1 s slides, up to ~13 mm for 2 s slides and up to ~70 mm for slow 4 s creeps. The real
 sensor adds fusion lag and tilt errors, so plan on **centimetre-level** accuracy, check it once by
 sliding a known distance (e.g. 50 mm along a ruler), and don't use it for millimetre offsets. The
 angles are much better (about a degree; yaw drifts slowly in IMU mode, so re-zero every session).
 
 Flash log: the board also writes the track (25 Hz), zeroes, sweep starts/ends and trial marks to
 its flash. `python flash_dump.py --port COM3` reads it to CSV; `--erase` wipes it before a session.
+
+If `imu zero` fails, the error says why: `no IMU data arriving` (wiring/UART), or `not still`
+with the measured `acc_dev`/`gyro_dev` against their limits (0.25 m/s², 3 deg/s). The board
+learns the sensor's resting offsets once the readings stop changing, so an uncalibrated
+BNO055 that reads, say, 0.4 m/s² at rest still zeroes after about a second. `imu` prints the
+same numbers live.
 
 Board commands for checking by hand (serial monitor at 921600): `i`, `imu`, `imu zero`,
 `amp on|off|auto`, `flash info`, `test` (150 Hz tone).
