@@ -6,15 +6,21 @@ at each frequency. Trials are tagged with test metadata so conditions (blank, ob
 depth, …) can be averaged and compared, and so the data can feed a model later.
 
 ```
-firmware/esp32   one ESP32: samples the 4 piezos and plays the sine sweep
-pc/              capture.py, process.py, analyze.py (+ piezo/ library, tests/)
+firmware/esp32   one ESP32: samples the 4 piezos, plays the sine sweep, tracks the head (IMU), logs to flash
+pc/              capture.py, process.py, analyze.py, flash_dump.py (+ piezo/ library, tests/)
 ```
 
-## Hardware (one ESP32)
+## Hardware (system_board: one ESP32)
 
 - Piezos: up_right GPIO35, up_left GPIO32, down_left GPIO33, down_right GPIO34.
-- Drive: GPIO25 (DAC) → amp input. The DAC sine sits on ~1.65 V, so the amp input must be AC
-  coupled (add a 1–10 µF series cap if it is not).
+- Amp (PAM8403D): input ← GPIO26 (DAC2, ACT_INPUT, 100 nF coupling); SHDN ← GPIO4. The amp is
+  switched on only while a sweep or tone plays (`amp auto`, default); `amp on` / `amp off` override.
+  SHDN also has a 10k pull-up to VDC, so if the ESP32 is not driving GPIO4 the amp is on.
+- IMU (BNO055, UART mode: PS1 high, PS0 low): COM0 → RX2 (GPIO16), COM1 ← TX2 (GPIO17), 115200 baud,
+  read at 100 Hz. Runs in IMU fusion mode (accelerometer + gyro, no magnetometer) because the
+  transducer and speaker magnets sit right next to it.
+- Flash (W25Q32JVSS): CS GPIO5, CLK GPIO18, MISO GPIO19, MOSI GPIO23. Backup log of the IMU track.
+- GPIO25 reads the battery (V_Sense, 100k/100k); INFO reports it as `vbat`.
 - The tone runs on core 0 and the sampling on core 1, both on the same `micros()` clock. The
   board reports when each tone starts, so the laptop knows the drive phase at every sample.
 
@@ -41,6 +47,45 @@ Metadata flags: `--test` (blank, object, offset, depth, rotation, noise, other),
 Try it without hardware: `python capture.py --simulate --test object --object vertebra --repeats 3`.
 
 After each trial it prints the SNR and peak amplitude per disc, and asks whether to keep it.
+
+## Phantom tests: IMU angle and x/y
+
+For every test except `blank`, `capture.py` uses the BNO055 on the board:
+
+1. At the start it asks you to put the sensor head on the **lower-left corner** of the phantom,
+   square to its edges (board x axis pointing along the phantom's right), and hold it still. The
+   board then sets that spot as (0, 0) and the current pose as zero angle. `--no-zero` keeps the
+   corner from an earlier run (as long as the board has not been power-cycled).
+2. Move the head to the next spot in **one quick slide** (about 0.3–3 s), then hold it still and
+   press Enter. Before each sweep it prints where the IMU thinks the head is.
+3. Each trial saves the head's pose during the sweep: `imu_x_mm`, `imu_y_mm`, `imu_yaw_deg`,
+   `imu_pitch_deg`, `imu_roll_deg` and checks (`imu_move_during_sweep_mm`, `imu_turn_during_sweep_deg`,
+   calibration levels) in `trials.csv`, and the full 100 Hz track in `raw/<trial>_imu.csv.gz`.
+   The `--x`/`--y` you type are still the truth labels; the IMU estimate sits next to them.
+
+```
+python capture.py --port COM3 --test object --object vertebra --depth 15 --repeats 5      # zeroes first
+python capture.py --port COM3 --test object --object vertebra --depth 15 --no-zero        # same corner
+python capture.py --port COM3 --test blank --depth 15 --repeats 5                          # no IMU
+python capture.py ... --imu-axes "-y,x"     # if the board sits rotated 90 deg on the head
+```
+
+**How good is x/y?** An accelerometer alone cannot give position: double-integrating a typical
+0.05 m/s² bias gives 2.5 cm of error after 1 s and 2.5 m after 10 s. The board only integrates
+while the head is sliding, forces the velocity to zero whenever the head is still or a sweep is
+playing, removes the leftover velocity of each slide as a linear drift, and re-learns the bias
+while still (`firmware/esp32/src/tracker.h`; same algorithm in `pc/piezo/imu.py`). On simulated
+moves with BNO055-like noise and bias (`tests/test_imu.py`) the error after each slide is about
+1 mm for 0.5–1 s slides, up to ~10 mm for 2 s slides and up to ~40 mm for slow 4 s creeps. The real
+sensor adds fusion lag and tilt errors, so plan on **centimetre-level** accuracy, check it once by
+sliding a known distance (e.g. 50 mm along a ruler), and don't use it for millimetre offsets. The
+angles are much better (about a degree; yaw drifts slowly in IMU mode, so re-zero every session).
+
+Flash log: the board also writes the track (25 Hz), zeroes, sweep starts/ends and trial marks to
+its flash. `python flash_dump.py --port COM3` reads it to CSV; `--erase` wipes it before a session.
+
+Board commands for checking by hand (serial monitor at 921600): `i`, `imu`, `imu zero`,
+`amp on|off|auto`, `flash info`, `test` (150 Hz tone).
 
 ## Live alignment test (blank calibration + centred template)
 
