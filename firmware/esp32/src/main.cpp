@@ -65,7 +65,7 @@ constexpr uint8_t kShdnPin = 4;    // PAM8403 SHDN (active low)
 constexpr uint8_t kVSensePin = 25; // battery through 100k/100k
 constexpr int kImuRxPin = 16, kImuTxPin = 17;
 constexpr uint32_t kBaud = 921600;
-constexpr const char *kFirmware = "piezo-sweep-3.0";
+constexpr const char *kFirmware = "piezo-sweep-3.1";
 constexpr float kTestHz = 150;
 
 // ---------------------------------------------------------------- sweep settings
@@ -203,6 +203,7 @@ uint32_t imuCount = 0;
 bool logEnabled = true;
 bool zeroReplyPending = false;
 uint32_t zeroRequestMs = 0;
+uint32_t zeroImuCount = 0;
 constexpr uint32_t kLogEvery = 4;  // flash log at 25 Hz (IMU at 100 Hz)
 
 inline int16_t cdeg(float d) { return int16_t(constrain(lroundf(d * 100), -32767L, 32767L)); }
@@ -287,13 +288,14 @@ void sendImu() {
 void printImu() {
   Serial.printf("IMU,ok=%d,mode=%s,yaw_deg=%.2f,pitch_deg=%.2f,roll_deg=%.2f,x_mm=%.1f,y_mm=%.1f,"
                 "zeroed=%d,moving=%d,long_move=%d,gravity_odd=%d,stale=%d,calib_sys=%u,"
-                "calib_gyr=%u,calib_acc=%u,calib_mag=%u,errors=%lu\n",
+                "calib_gyr=%u,calib_acc=%u,calib_mag=%u,acc_dev=%.3f,gyro_dev=%.2f,samples=%lu,errors=%lu\n",
                 bno.ok(), bno.mode() == Bno055::kModeNdof ? "ndof" : "imu", pose.yawDeg,
                 pose.pitchDeg, pose.rollDeg, pose.xMm, pose.yMm, !!(pose.flags & Tracker::kZeroed),
                 !!(pose.flags & Tracker::kMoving), !!(pose.flags & Tracker::kLongMove),
                 !!(pose.flags & Tracker::kGravityOdd), !!(pose.flags & Tracker::kStale),
                 lastImu.calib >> 6, (lastImu.calib >> 4) & 3, (lastImu.calib >> 2) & 3,
-                lastImu.calib & 3, (unsigned long)bno.errors());
+                lastImu.calib & 3, tracker.accDev(), tracker.gyroDev(), (unsigned long)imuCount,
+                (unsigned long)bno.errors());
 }
 
 // Called every loop on core 1: never blocks.
@@ -319,7 +321,15 @@ void serviceImu() {
   }
   if (zeroReplyPending && millis() - zeroRequestMs > 8000) {
     zeroReplyPending = false;
-    if (!streaming) Serial.println("ERR,zero: the head never held still for 0.25 s (IMU ok?)");
+    if (streaming) return;
+    const unsigned long n = imuCount - zeroImuCount;
+    if (n == 0) {
+      Serial.printf("ERR,zero: no IMU data arriving (BNO055 read errors=%lu)\n", (unsigned long)bno.errors());
+    } else {
+      Serial.printf("ERR,zero: not still for 0.25 s in 8 s (imu_samples=%lu, acc_dev=%.2f m/s2 "
+                    "limit %.2f, gyro_dev=%.2f deg/s limit %.1f)\n",
+                    n, tracker.accDev(), tracker.stillAccMs2, tracker.gyroDev(), tracker.stillGyroDps);
+    }
   }
 }
 
@@ -421,6 +431,7 @@ void handleCommand(String cmd) {
       tracker.requestZero();
       zeroReplyPending = true;
       zeroRequestMs = millis();
+      zeroImuCount = imuCount;
     }
   } else if (cmd.startsWith("imu mode")) {
     const String m = cmd.substring(8);
