@@ -8,8 +8,13 @@ import numpy as np
 
 MAGIC = b"\xA5\x5A"
 EVENT_MAGIC = b"\xA5\x5B"
+IMU_MAGIC = b"\xA5\x5C"
 HEADER = struct.Struct("<HIH")  # n, seq, overruns (after the 2 magic bytes)
 EVENT = struct.Struct("<BIf")   # type, t_us, freq_hz
+IMU = struct.Struct("<IhhhffhhBB")  # t_us, yaw/pitch/roll (0.01 deg), x_mm, y_mm, ax/ay (mm/s^2), flags, calib
+IMU_DTYPE = np.dtype([("t_us", "<i8"), ("yaw_deg", "<f4"), ("pitch_deg", "<f4"), ("roll_deg", "<f4"),
+                      ("x_mm", "<f4"), ("y_mm", "<f4"), ("ax_ms2", "<f4"), ("ay_ms2", "<f4"),
+                      ("flags", "u1"), ("calib", "u1")])
 FRAME = np.dtype([("t_us", "<u4"), ("adc", "<u2", (4,))])
 BAUD = 921600
 EVENT_NAMES = {1: "sweep_start", 2: "tone_start", 3: "tone_end", 4: "sweep_end", 5: "sweep_aborted"}
@@ -74,6 +79,50 @@ def parse_blocks(buf: bytes):
             te += 1 << 32
         events.append({"event": EVENT_NAMES.get(kind, str(kind)), "t_us": te, "freq_hz": float(f)})
     return t, np.concatenate(adcs), events, stats
+
+
+def parse_imu(buf: bytes, ref_t_us=None) -> np.ndarray:
+    """Decode every IMU block (A5 5C) in `buf` into a structured array (IMU_DTYPE).
+    t_us is unwrapped against ref_t_us (e.g. the first piezo sample) so it shares the
+    piezo clock. Piezo/event blocks are skipped."""
+    rows = []
+    i = 0
+    while True:
+        i = buf.find(IMU_MAGIC, i)
+        if i < 0:
+            break
+        end = i + 2 + IMU.size
+        if end + 2 > len(buf):
+            break
+        if sum(buf[i + 2:end]) & 0xFFFF == struct.unpack_from("<H", buf, end)[0]:
+            rows.append(IMU.unpack_from(buf, i + 2))
+            i = end + 2
+        else:
+            i += 1
+    out = np.zeros(len(rows), IMU_DTYPE)
+    if not rows:
+        return out
+    r = list(zip(*rows))
+    t = np.array(r[0], np.int64)
+    if ref_t_us is not None:
+        ref = int(ref_t_us)
+        t = t + ((ref - t + (1 << 31)) >> 32 << 32)  # nearest wrap to the reference
+    else:
+        t = t + np.concatenate([[0], np.cumsum(np.diff(t) < -(1 << 31))]) * (1 << 32)
+    out["t_us"] = t
+    for k, name in enumerate(["yaw_deg", "pitch_deg", "roll_deg"], 1):
+        out[name] = np.array(r[k]) / 100.0
+    out["x_mm"], out["y_mm"] = r[4], r[5]
+    out["ax_ms2"], out["ay_ms2"] = np.array(r[6]) / 1000.0, np.array(r[7]) / 1000.0
+    out["flags"], out["calib"] = r[8], r[9]
+    return out
+
+
+def encode_imu(t_us, yaw=0.0, pitch=0.0, roll=0.0, x=0.0, y=0.0, ax=0.0, ay=0.0, flags=1, calib=0) -> bytes:
+    """Inverse of parse_imu for one sample (tests)."""
+    body = IMU.pack(int(t_us) & 0xFFFFFFFF, round(yaw * 100), round(pitch * 100), round(roll * 100),
+                    x, y, round(ax * 1000), round(ay * 1000), flags, calib)
+    return IMU_MAGIC + body + struct.pack("<H", sum(body) & 0xFFFF)
 
 
 def encode_blocks(t_us, adc, frames_per_block=50) -> bytes:
@@ -167,9 +216,9 @@ class Stream:
         return bytes(self.buf)
 
 
-def record_sweep(ser, duration_s, pre_s=0.5, post_s=0.5):
+def record_sweep(ser, duration_s, pre_s=0.5, post_s=0.5, with_imu=False):
     """Stream, play one sweep, stop when the board reports the sweep finished.
-    Returns (t_us, adc, events, stats)."""
+    Returns (t_us, adc, events, stats), plus the IMU samples (parse_imu) if with_imu."""
     s = Stream(ser)
     s.start()
     time.sleep(pre_s)
@@ -184,4 +233,8 @@ def record_sweep(ser, duration_s, pre_s=0.5, post_s=0.5):
     else:
         print("  warning: the board never reported the end of the sweep")
     time.sleep(post_s)
-    return parse_blocks(s.stop())
+    buf = s.stop()
+    t_us, adc, events, stats = parse_blocks(buf)
+    if not with_imu:
+        return t_us, adc, events, stats
+    return t_us, adc, events, stats, parse_imu(buf, t_us[0] if len(t_us) else None)

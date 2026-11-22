@@ -3,6 +3,8 @@
 data/
   raw/<trial_id>.csv.gz     raw samples: t_us, ur, ul, dl, dr (ADC counts)
   raw/<trial_id>.json       everything about the trial: metadata, sweep, firmware info
+  raw/<trial_id>_imu.csv.gz IMU pose during the trial (phantom tests only): t_us on the
+                            piezo clock, yaw/pitch/roll, x_mm/y_mm from the lower-left corner
   trials.csv                one row per trial (metadata + capture quality)
   features.csv              tidy: one row per trial x channel x frequency
   dataset_wide.csv          one row per trial, every feature as a column (for ML)
@@ -58,6 +60,18 @@ def save_trial(data_dir: Path, trial_id: str, t_us, adc, meta: dict):
     (raw / f"{trial_id}.json").write_text(json.dumps(meta, indent=2, default=float))
 
 
+def save_imu(data_dir: Path, trial_id: str, imu_df: pd.DataFrame):
+    raw = Path(data_dir) / "raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    imu_df.to_csv(raw / f"{trial_id}_imu.csv.gz", index=False)
+
+
+def load_imu(data_dir: Path, trial_id: str):
+    """The trial's IMU samples, or None for trials without IMU (blank, older trials)."""
+    path = Path(data_dir) / "raw" / f"{trial_id}_imu.csv.gz"
+    return pd.read_csv(path) if path.exists() else None
+
+
 def load_trial(data_dir: Path, trial_id: str):
     raw = Path(data_dir) / "raw"
     meta = json.loads((raw / f"{trial_id}.json").read_text())
@@ -73,6 +87,7 @@ def trial_row(meta: dict, info: dict) -> dict:
     row = {"trial_id": meta["trial_id"], "time": meta.get("time"), "condition": condition_label(meta)}
     row.update({k: meta.get(k) for k in META_FIELDS})
     row.update(info)
+    row.update(meta.get("imu_summary", {}))  # imu_x_mm, imu_y_mm, imu_yaw_deg, ... (phantom tests)
     row["calibration"] = meta.get("calibration", "")
     return row
 
