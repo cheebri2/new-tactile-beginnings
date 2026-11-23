@@ -25,3 +25,5 @@ Prediction by true x (mean, SD, n):
 | 10 | +11.5 | 6.1 | 35 |
 
 Mean abs error by y row: y=0: 3.7, y=20: 5.2, y=40: 4.1, y=60: 3.2, y=80: 6.6, y=100: 5.2, y=120: 3.7
+
+Mean abs error by how far the nearest process is above the sensor centre (dy): dy=-15: 5.2 (n=25), dy=-10: 4.1 (n=25), dy=+0: 3.5 (n=50), dy=+5: 5.1 (n=51), dy=+10: 5.2 (n=25)

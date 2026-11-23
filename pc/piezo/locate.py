@@ -87,6 +87,24 @@ def share_matrix(feats: pd.DataFrame, trial_ids, channels=None, freqs=None, f_mi
     return cube.reshape(len(trial_ids), -1), names, channels, freqs
 
 
+# ------------------------------------------------------------------ phantom geometry
+
+# bri's 5-vertebra phantoms (2026-11-23): stamp y (mold bottom to sensor bottom, mm) at which each
+# vertebra's spinous-process peak sits at the centre of the 94 mm sensor (peak ~45-50 mm above the
+# sensor's bottom edge).
+PHANTOM_VERTEBRAE_Y = (0.0, 30.0, 60.0, 85.0, 125.0)
+SENSOR_CENTRE_MM = 47.0
+
+
+def nearest_vertebra(y_mm, vertebrae=PHANTOM_VERTEBRAE_Y):
+    """(level 1..n, dy_mm) for stamps at y_mm: dy = how far the nearest process peak is above the
+    sensor centre (+ = process above centre). Both in the stamp-y convention."""
+    v = np.asarray(vertebrae, float)
+    y = np.atleast_1d(np.asarray(y_mm, float))
+    k = np.abs(y[:, None] - v[None, :]).argmin(axis=1)
+    return k + 1, v[k] - y
+
+
 # ------------------------------------------------------------------ ridge
 
 

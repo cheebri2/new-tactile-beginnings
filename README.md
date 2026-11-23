@@ -136,6 +136,8 @@ python cobb.py feasibility training/results/locator/predictions.csv     # Cobb e
 - `--bad-discs`: recorded names of discs to leave out. `dl` (GPIO33) was intermittent on 2026-11-22.
 - Features: log amplitude of each disc minus the mean of the discs, 50-190 Hz. No blank needed.
 - Validation holds out one whole y row at a time (`--group`), never single stamps.
+- `--vertebrae 0 30 60 85 125` (default): stamp y at which each of the phantom's 5 processes sits at the
+  sensor centre. Adds `level` and `dy_mm` to predictions; `cobb.py` places each vertebra at its own y.
 - Positions come from the typed x/y. The IMU x/y did not track the typed positions on 2026-11-22, so
   don't use `--position imu` until that is fixed.
 

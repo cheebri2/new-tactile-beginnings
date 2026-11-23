@@ -53,7 +53,13 @@ def c_curve(cobb_deg, y, y0, span):
     return a * np.sin(np.pi * (np.asarray(y) - y0) / span)
 
 
-def rows_from_stamps(df, x_col="spine_x_mm", y_col="head_y_mm"):
+def rows_from_stamps(df, x_col="spine_x_mm", y_col="head_y_mm", max_dy=10.0):
+    """(y, spine x) per vertebra: median of the stamps whose nearest process is within max_dy of the
+    sensor centre, placed at that vertebra's stamp y. Without a level column: one point per y row."""
+    if "level" in df and "dy_mm" in df:
+        d = df[df.dy_mm.abs() <= max_dy].assign(vy=lambda t: t[y_col] + t.dy_mm)
+        r = d.groupby("level").agg(vy=("vy", "median"), x=(x_col, "median"))
+        return r.vy.to_numpy(float), r.x.to_numpy(float)
     r = df.groupby(df[y_col].round(0))[x_col].median()
     return r.index.to_numpy(float), r.to_numpy(float)
 
@@ -63,12 +69,12 @@ def estimate(a):
     y_col = "head_y_mm" if "head_y_mm" in df else "y_mm"
     if "spine_x_mm" not in df:
         df["spine_x_mm"] = df["x_mm"] - df["pred_x_mm"]      # training output: head x typed
-    y, x = rows_from_stamps(df, "spine_x_mm", y_col)
+    y, x = rows_from_stamps(df, "spine_x_mm", y_col, a.max_dy)
     if len(y) < 3:
         raise SystemExit("need stamps in at least 3 y rows")
     c_c, amp, _ = fit_c(y, x)
     c_p, _, _ = fit_poly(y, x, a.deg)
-    print("row  y(mm)  spine x (mm, median of stamps)")
+    print("level y(mm)  spine x (mm, median of stamps)")
     for yy, xx in zip(y, x):
         print(f"     {yy:5.0f}  {xx:+6.1f}")
     print(f"\nCobb, c-curve fit: {c_c:.1f} deg (bow {amp:+.1f} mm)\nCobb, poly deg {a.deg}: {c_p:.1f} deg")
@@ -78,9 +84,12 @@ def feasibility(a):
     df = pd.read_csv(a.predictions)
     rng = np.random.default_rng(a.seed)
     df["err_spine"] = -(df["pred_x_mm"] - df["x_mm"])        # spine estimate - truth
+    if "dy_mm" in df and a.max_dy is not None:
+        df = df[df.dy_mm.abs() <= a.max_dy]                  # only rows with a process near the centre
     rows = sorted(df.y_mm.unique())
     pools = [df[df.y_mm == r] for r in rows]
-    y_rows = np.asarray(rows, float) if a.levels is None else np.linspace(0, a.span, a.levels)
+    y_rows = (np.asarray(a.level_y, float) if a.level_y else
+              np.asarray(rows, float) if a.levels is None else np.linspace(0, a.span, a.levels))
     y0, span = y_rows.min(), np.ptp(y_rows)
 
     grid = np.array(sorted(df.x_mm.unique()))
@@ -120,7 +129,8 @@ def feasibility(a):
     Path(a.out).mkdir(parents=True, exist_ok=True)
     res.to_csv(Path(a.out) / "cobb_feasibility.csv", index=False)
     show = res[res.method == "c-curve"]
-    print(f"{len(y_rows)} rows over {span:.0f} mm, {a.draws} draws each, c-curve fit\n")
+    print(f"{len(y_rows)} levels over {span:.0f} mm, errors from real rows y = {', '.join(f'{r:g}' for r in rows)}, "
+          f"{a.draws} draws each, c-curve fit\n")
     print(show.pivot_table(index="scheme", columns="true_cobb", values="mean_est", sort=False).round(1)
           .to_string(), "\n\nSD of the estimate (deg):")
     print(show.pivot_table(index="scheme", columns="true_cobb", values="sd", sort=False).round(1).to_string())
@@ -144,7 +154,7 @@ def plot(res, path, n_rows, span):
     ax.axhspan(0, 10, color="0.92", zorder=0)
     ax.text(m - 1, 4, "below 10° = not scoliosis", ha="right", fontsize=8, color="0.4")
     ax.set(xlabel="true Cobb angle (deg)", ylabel="estimated Cobb (deg, mean ± SD)",
-           title=f"Cobb from the locator's real held-out errors\n{n_rows} rows over {span:.0f} mm, c-curve fit")
+           title=f"Cobb from the locator's real held-out errors\n{n_rows} vertebrae over {span:.0f} mm, c-curve fit")
     ax.legend(fontsize=7.5, loc="upper left")
     fig.tight_layout()
     fig.savefig(path, dpi=150)
@@ -156,11 +166,19 @@ def main():
     e = sub.add_parser("estimate")
     e.add_argument("predictions")
     e.add_argument("--deg", type=int, default=2)
+    e.add_argument("--max-dy", type=float, default=10.0,
+                   help="use stamps whose nearest process is within this of the sensor centre (mm)")
     f = sub.add_parser("feasibility")
     f.add_argument("predictions", help="predictions.csv written by locator.py train")
     f.add_argument("--cobbs", type=float, nargs="+", default=[0, 10, 20, 30],
                    help="true angles to simulate (above ~30 deg the shift leaves the trained +-10 mm)")
-    f.add_argument("--levels", type=int, default=None, help="rows to simulate (default: the real rows)")
+    f.add_argument("--level-y", type=float, nargs="*", default=[0, 30, 60, 85, 125],
+                   help="stamp y of each vertebra to simulate (default: bri's 5-vertebra phantom). "
+                        "Pass nothing to use the real rows")
+    f.add_argument("--max-dy", type=float, default=5.0,
+                   help="draw errors only from real rows whose nearest process is within this of the "
+                        "sensor centre (needs level/dy_mm in predictions.csv)")
+    f.add_argument("--levels", type=int, default=None, help="evenly spaced rows to simulate instead")
     f.add_argument("--span", type=float, default=120, help="mm covered by --levels")
     f.add_argument("--draws", type=int, default=2000)
     f.add_argument("--seed", type=int, default=0)

@@ -57,32 +57,45 @@ held-out predictions it is scored on.
 bri's scoliotic phantoms have flat vertebrae that are only shifted sideways, so every stamp looks
 like a healthy-phantom stamp at some offset, and these errors carry over directly. No tilt test needed.
 
-`cobb.py feasibility` bends a virtual spine to a known Cobb angle (single C-curve over the 7 rows,
-120 mm). At each vertebra the head is stamped at fixed spots measured from the straight midline (where
-the vertebra would be if centred). Each stamp gets a real held-out error from this batch at the nearest
-trained offset, with whole rows drawn together so row-level drift is kept. Estimated Cobb, mean ± SD
-of 1000 simulated scans (c-curve fit):
+**Phantom layout (bri, 2026-11-23).** 5 vertebrae. With the stamp y convention (mold bottom to
+sensor bottom), each vertebra's spinous-process peak is at the centre of the 94 mm sensor when y is
+about 0, 30, 60, 85 and 125 mm (the peak is 45-50 mm above the sensor's bottom edge). `locator.py`
+labels every stamp with its nearest vertebra (`level`) and how far that process is above the sensor
+centre (`dy_mm`). On 11-22 the rows y = 0 and 60 were centred on a process, 80 and 120 were 5 mm off,
+and 20, 40, 100 were 10-15 mm off.
+
+- **Side-to-side is most accurate when a process is centred:** 3.5 mm mean error at dy = 0, vs
+  4.1-5.2 mm at 5-15 mm off. So stamp each vertebra centred.
+- **Up-down position can't be learned from this batch.** Predicting dy did worse than guessing
+  (9.1 vs 6.7 mm). With only 7 rows taken in order through the afternoon, drift swamps it. To learn
+  it, stamp y in random order, including spots between vertebrae.
+
+`cobb.py feasibility` bends the 5 vertebrae into a known Cobb angle (single C-curve over 125 mm). At
+each vertebra the head is stamped centred on it in y, at fixed spots from the straight midline
+(where the vertebra would be if centred). Each stamp gets a real held-out error at the nearest trained
+offset, drawn from the 11-22 rows centred within 5 mm of a process (y = 0, 60, 80, 120), with whole
+rows drawn together so row-level drift is kept. Estimated Cobb, mean ± SD of 1000 simulated scans,
+and how often a scan reads ≥ 10°:
 
 | stamps per vertebra | 0° | 10° | 20° | 30° |
 |---|---|---|---|---|
-| 1, head on midline | 18.6 ± 13.8 | 15.5 ± 11.9 | 18.5 ± 13.8 | 24.2 ± 15.3 |
-| 3 reseats, head on midline | 13.4 ± 10.1 | 11.6 ± 8.9 | 15.5 ± 11.2 | 22.1 ± 12.9 |
-| head at -10, 0, +10 mm, 3 reseats (9) | 5.6 ± 4.2 | 10.0 ± 5.7 | 20.0 ± 6.0 | 30.6 ± 6.5 |
-| **head at -10, -5, 0, +5, +10 mm, 2 reseats (10)** | **5.2 ± 3.9** | **10.3 ± 5.6** | **20.2 ± 5.9** | **29.1 ± 6.2** |
-| same 5 spots, 5 reseats (25, like 11-22) | 4.6 ± 3.6 | 10.3 ± 5.0 | 20.0 ± 5.0 | 29.1 ± 5.2 |
+| 1, head on midline | 16.4 ± 13.6 (60 %) | 13.6 ± 11.3 | 16.0 ± 10.6 | 24.3 ± 12.7 |
+| 3 reseats, head on midline | 7.4 ± 5.7 (27 %) | 7.1 ± 5.3 | 9.5 ± 6.5 | 21.7 ± 9.4 |
+| head at -10, 0, +10 mm, 3 reseats (9) | 6.0 ± 4.4 (19 %) | 8.6 ± 5.2 | 17.5 ± 5.6 | 31.1 ± 7.2 |
+| **head at -10, -5, 0, +5, +10 mm, 2 reseats (10)** | **4.1 ± 3.2 (5 %)** | **10.8 ± 4.4** | **20.9 ± 4.1 (100 %)** | **30.8 ± 5.2** |
+| same 5 spots, 5 reseats (25, like 11-22) | 3.1 ± 2.4 (0 %) | 11.1 ± 3.2 | 21.1 ± 2.9 | 31.0 ± 4.4 |
 
-The healthy phantom itself, from all its 11-22 stamps, reads 7.3° (quadratic fit 8.5°).
+Only four real rows feed the error pool, so treat these spreads as a little optimistic. The healthy
+phantom itself, from the 11-22 stamps placed at its 5 vertebrae, reads 7.9° (quadratic fit 9.8°).
+Level 4 (y = 85) only has stamps from y = 80 and reads -4.8 mm, which drives most of that.
 
-- Stamping only on the midline doesn't work: x = 0 is the model's noisiest offset, and a healthy spine
-  reads 13-19°.
-- **Recommended: 5 head spots per vertebra (-10, -5, 0, +5, +10 mm from the midline), 2 reseats each.**
-  That is 10 stamps per vertebra, 70 for 7 vertebrae, and about as good as the 25-stamp raster:
-  a healthy spine reads 5 ± 4° (13 % of scans ≥ 10°), 20° reads 20 ± 6°.
-- So it separates healthy from about 20°+ curves, at about ±6° per scan. It's not yet precise
-  enough for the 10° cutoff. That needs about 1-1.5 mm per vertebra (±1 mm gives about ±3° over 7 rows).
-- Keep each vertebra's shift within about ±10 mm of where the head is (the trained range). Above ~30°
-  the shift over 120 mm passes 10 mm, so move the head spots with the spine and type the head's real x.
-- Keep rows centred on a vertebra, not between two, so a stamp doesn't straddle two shifts.
+- Stamping only on the midline doesn't work: x = 0 is the model's noisiest offset.
+- **Recommended: at each of the 5 vertebrae (y = 0, 30, 60, 85, 125), stamp the head at -10, -5, 0,
+  +5, +10 mm from the midline, 2 reseats each.** That's 50 stamps per phantom. A healthy spine reads
+  4 ± 3° and a 20° curve reads 21 ± 4°, so healthy vs 20°+ separates cleanly. 10° curves are
+  borderline (about half read ≥ 10°).
+- Keep each vertebra's shift within about ±10 mm of the head spots (the trained range). Above ~30°,
+  move the spots along with the spine and type the head's real x.
 - The angle measured is the angle of the line through the shifted vertebrae. On a patient, rotated
   vertebrae would make the surface line read lower than the X-ray Cobb; this phantom can't show that.
 
@@ -90,7 +103,7 @@ The healthy phantom itself, from all its 11-22 stamps, reads 7.3° (quadratic fi
 
 **Not to train.** The locator learns the head-to-spine offset, and the healthy phantom with the head
 moved left/right gives exactly those offsets. **To validate, one scan** of a scoliotic phantom with a
-designed Cobb angle (about 20-30°), stamped as recommended above (70 stamps), gives one real Cobb
+designed Cobb angle (about 20-30°), stamped as recommended above (50 stamps), gives one real Cobb
 reading to compare with the design. A second pass on another day gives repeatability. No blanks are
 needed for the model (one every 30-45 min is enough to watch disc health).
 

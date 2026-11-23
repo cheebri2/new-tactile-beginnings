@@ -48,3 +48,9 @@ def test_cobb_fits_recover_angle():
         assert abs(fit_c(y, x)[0] - cobb) < 0.01
         assert abs(fit_poly(y, x, 4)[0] - cobb) < 2.5
     assert fit_c(y, np.zeros_like(y))[0] < 1e-6
+
+
+def test_nearest_vertebra():
+    lvl, dy = locate.nearest_vertebra([0, 20, 40, 80, 100, 120])
+    assert list(lvl) == [1, 2, 2, 4, 4, 5]
+    assert list(dy) == [0, 10, -10, 5, -15, 5]

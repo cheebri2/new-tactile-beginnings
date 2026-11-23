@@ -56,6 +56,8 @@ def train(a):
     model = locate.ridge_fit(X, y, alpha)
 
     res = st[["trial_id", "session", "repeat", "x_mm", "y_mm", "imu_x_mm", "imu_y_mm"]].copy()
+    if a.vertebrae:
+        res["level"], res["dy_mm"] = locate.nearest_vertebra(res.y_mm, a.vertebrae)
     res["pred_raw_mm"] = raw
     res["pred_x_mm"] = pred
     res["error_mm"] = err
@@ -82,7 +84,7 @@ def train(a):
     }
     meta = {"trained": dt.datetime.now().isoformat(timespec="seconds"), "data": str(a.data),
             "turn": a.turn, "bad_discs": list(a.bad_discs), "features": "share log10 amp",
-            "f_min": a.f_min, "f_max": a.f_max, "target": "x_mm (head right of spine, mm)", "cv": metrics}
+            "f_min": a.f_min, "f_max": a.f_max, "vertebrae_y": list(a.vertebrae or []), "target": "x_mm (head right of spine, mm)", "cv": metrics}
     locate.save_model(a.model, model, chans, freqs, meta)
 
     lines = [f"# Locator cross-validation ({dt.date.today()})", "",
@@ -101,6 +103,10 @@ def train(a):
              "Prediction by true x (mean, SD, n):", "", "| true x | mean | SD | n |", "|---|---|---|---|"]
     lines += [f"| {x:g} | {r['mean']:+.1f} | {r['std']:.1f} | {int(r['size'])} |" for x, r in by_x.iterrows()]
     lines += ["", "Mean abs error by y row: " + ", ".join(f"y={k:g}: {v:.1f}" for k, v in by_row.items())]
+    if a.vertebrae:
+        d = res.assign(ae=np.abs(err)).groupby("dy_mm").ae.agg(["mean", "size"])
+        lines += ["", "Mean abs error by how far the nearest process is above the sensor centre (dy): "
+                  + ", ".join(f"dy={k:+g}: {r['mean']:.1f} (n={int(r['size'])})" for k, r in d.iterrows())]
     (out / "report.md").write_text("\n".join(lines) + "\n")
     plot(res, out / "locator_cv.png", metrics)
     print("\n".join(lines))
@@ -144,9 +150,13 @@ def predict(a):
     hx, hy = ("imu_x_mm", "imu_y_mm") if a.position == "imu" else ("x_mm", "y_mm")
     st["head_x_mm"], st["head_y_mm"] = st[hx], st[hy]
     st["spine_x_mm"] = st.head_x_mm - st.pred_x_mm
+    vy = a.vertebrae if a.vertebrae is not None else m.get("vertebrae_y")
+    if vy:
+        st["level"], st["dy_mm"] = locate.nearest_vertebra(st.head_y_mm, vy)
     out = Path(a.results)
     out.mkdir(parents=True, exist_ok=True)
     cols = ["trial_id", "x_mm", "y_mm", "head_x_mm", "head_y_mm", "pred_x_mm", "spine_x_mm"]
+    cols += [c for c in ("level", "dy_mm") if c in st]
     st[cols].to_csv(out / "predictions.csv", index=False)
     print(st[cols].round(1).to_string(index=False))
     print(f"\n-> {out}/predictions.csv   (Cobb: python cobb.py estimate {out}/predictions.csv)")
@@ -163,6 +173,9 @@ def main():
     t.add_argument("--f-min", type=float, default=50)
     t.add_argument("--f-max", type=float, default=200,
                    help="top of the band (default 200 Hz: 50-190 Hz did best on the 2026-11-22 batch)")
+    t.add_argument("--vertebrae", type=float, nargs="*", default=list(locate.PHANTOM_VERTEBRAE_Y),
+                   help="stamp y at which each vertebra is centred under the head (default: bri's 5-vertebra "
+                        "phantom 0 30 60 85 125); adds level and dy_mm to predictions.csv. Pass nothing to skip")
     t.add_argument("--model", default="models/locator.json")
     t.add_argument("--results", default="training/results/locator")
     q = sub.add_parser("predict")
@@ -171,6 +184,8 @@ def main():
     q.add_argument("--turn", default=None, help="default: same as the training data")
     q.add_argument("--bad-discs", nargs="*", default=None)
     q.add_argument("--position", choices=["typed", "imu"], default="typed")
+    q.add_argument("--vertebrae", type=float, nargs="*", default=None,
+                   help="stamp y at which each vertebra is centred (default: the model's)")
     q.add_argument("--results", default="training/results/locator_predict")
     a = p.parse_args()
     train(a) if a.cmd == "train" else predict(a)
