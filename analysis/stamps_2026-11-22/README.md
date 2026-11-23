@@ -34,67 +34,67 @@ Reproduce: `cd pc && python locator.py train --data final_data --turn cw90 --bad
 Ridge regression on share log amplitude of 3 discs, 50-190 Hz (39 features). Held out one y row at
 a time (7 folds, ridge strength picked inside each fold).
 
-| | |
-|---|---|
-| mean abs error per stamp | **3.7 mm** (guessing the mean: 5.9 mm) |
-| RMS error | 4.5 mm |
-| side correct when the spine is 5-10 mm off | 88 % |
-| mean of 5 reseats at one spot | 3.2 mm |
-| error shared by a whole row | SD 1.3 mm |
-| stamp-to-stamp error inside a row | SD 4.4 mm |
+Ridge shrinks toward 0 (a true 10 mm read 6.5 mm), which would make a shifted spine look straighter.
+The held-out predictions are put back on scale with a straight-line calibration (slope 0.63), stored
+in the model. That makes each stamp noisier but unbiased, which is what the Cobb fit needs.
 
-The predictions are shrunk toward 0 (slope 0.63), typical for ridge with this much noise. The 50-190 Hz
-band was chosen on this same data from four candidates (full band: 3.7 vs 4.1 mm), so expect a
-little worse on new data. Up-down position relative to a process isn't modelled yet (see above).
+| | before calibration | calibrated (used) |
+|---|---|---|
+| mean abs error per stamp | 3.7 mm | 4.5 mm (guessing the mean: 5.9 mm) |
+| mean by true x (-10, -5, 0, +5, +10) | -6.0, -2.9, -0.8, +0.7, +6.2 | -9.0, -4.8, -1.8, +4.2, +11.5 |
+| side correct when 5-10 mm off | 88 % | 91 % |
+
+Stamps with the spine right under the head are the noisiest (SD 8 mm at x = 0 vs 4-6 mm at ±5-10),
+so stamps beside the spine carry more information than stamps on it. The 50-190 Hz band was picked
+on this same data from four candidates, so expect slightly worse on new data. Up-down position
+relative to a process isn't modelled (see above). The calibration line is fitted to the same
+held-out predictions it is scored on.
 
 ![locator](locator_cv.png)
 
-## Cobb angle: feasible, with limits
+## Cobb angle from a phantom with shifted (not rotated) vertebrae
+
+bri's scoliotic phantoms have flat vertebrae that are only shifted sideways, so every stamp looks
+like a healthy-phantom stamp at some offset, and these errors carry over directly. No tilt test needed.
 
 `cobb.py feasibility` bends a virtual spine to a known Cobb angle (single C-curve over the 7 rows,
-120 mm), gives each row the real held-out errors from one row of this batch, fits the curve and
-compares. This works because a stamp's error depends on the head-to-spine offset, not on where the
-spine is, as long as each vertebra still sits square under the head.
+120 mm). At each vertebra the head is stamped at fixed spots measured from the straight midline (where
+the vertebra would be if centred). Each stamp gets a real held-out error from this batch at the nearest
+trained offset, with whole rows drawn together so row-level drift is kept. Estimated Cobb, mean ± SD
+of 1000 simulated scans (c-curve fit):
 
-| true Cobb | full raster (25 stamps/row) | 3 stamps/row over the spine |
-|---|---|---|
-| 0° | 5.0 ± 3.8°, 11 % read as ≥ 10° | 9.8 ± 7.2°, 42 % read as ≥ 10° |
-| 10° | 10.3 ± 5.5° | 12.6 ± 9.3° |
-| 20° | 19.9 ± 6.2°, 94 % read as ≥ 10° | 20.5 ± 10.9° |
-| 30° | 29.8 ± 5.8° | 29.3 ± 11.5° |
-| 45° | 44.8 ± 5.4° | 44.9 ± 10.4° |
+| stamps per vertebra | 0° | 10° | 20° | 30° |
+|---|---|---|---|---|
+| 1, head on midline | 18.6 ± 13.8 | 15.5 ± 11.9 | 18.5 ± 13.8 | 24.2 ± 15.3 |
+| 3 reseats, head on midline | 13.4 ± 10.1 | 11.6 ± 8.9 | 15.5 ± 11.2 | 22.1 ± 12.9 |
+| head at -10, 0, +10 mm, 3 reseats (9) | 5.6 ± 4.2 | 10.0 ± 5.7 | 20.0 ± 6.0 | 30.6 ± 6.5 |
+| **head at -10, -5, 0, +5, +10 mm, 2 reseats (10)** | **5.2 ± 3.9** | **10.3 ± 5.6** | **20.2 ± 5.9** | **29.1 ± 6.2** |
+| same 5 spots, 5 reseats (25, like 11-22) | 4.6 ± 3.6 | 10.3 ± 5.0 | 20.0 ± 5.0 | 29.1 ± 5.2 |
 
-The real healthy phantom, measured with all its stamps, reads **6.3°** (c-curve) and 7.1° (quadratic),
-which matches the 0° row.
+The healthy phantom itself, from all its 11-22 stamps, reads 7.3° (quadratic fit 8.5°).
 
-So today: a full raster tells a healthy spine from a 20-30°+ curve, with about ±6° per scan.
-That's not enough for the 10° threshold or for the ±3-5° that X-ray Cobb readers achieve. The
-precision comes from the per-row spine estimate: ±1.5 mm per row gives about ±4°, ±1 mm gives ±3°
-(7 rows, 120 mm). The current raster gets about ±2 mm per row.
+- Stamping only on the midline doesn't work: x = 0 is the model's noisiest offset, and a healthy spine
+  reads 13-19°.
+- **Recommended: 5 head spots per vertebra (-10, -5, 0, +5, +10 mm from the midline), 2 reseats each.**
+  That is 10 stamps per vertebra, 70 for 7 vertebrae, and about as good as the 25-stamp raster:
+  a healthy spine reads 5 ± 4° (13 % of scans ≥ 10°), 20° reads 20 ± 6°.
+- So it separates healthy from about 20°+ curves, at about ±6° per scan. It's not yet precise
+  enough for the 10° cutoff. That needs about 1-1.5 mm per vertebra (±1 mm gives about ±3° over 7 rows).
+- Keep each vertebra's shift within about ±10 mm of where the head is (the trained range). Above ~30°
+  the shift over 120 mm passes 10 mm, so move the head spots with the spine and type the head's real x.
+- Keep rows centred on a vertebra, not between two, so a stamp doesn't straddle two shifts.
+- The angle measured is the angle of the line through the shifted vertebrae. On a patient, rotated
+  vertebrae would make the surface line read lower than the X-ray Cobb; this phantom can't show that.
 
 ## Do you need to stamp scoliotic phantoms?
 
-**Not to train.** The locator learns the head-to-spine offset, and a healthy phantom with the head
-moved left/right gives exactly those offsets. Training on a scoliotic phantom only adds the same
-offsets with less control.
+**Not to train.** The locator learns the head-to-spine offset, and the healthy phantom with the head
+moved left/right gives exactly those offsets. **To validate, one scan** of a scoliotic phantom with a
+designed Cobb angle (about 20-30°), stamped as recommended above (70 stamps), gives one real Cobb
+reading to compare with the design. A second pass on another day gives repeatability. No blanks are
+needed for the model (one every 30-45 min is enough to watch disc health).
 
-**Yes, a little, to validate**, because healthy data can't test three things a real curve brings:
-1. each vertebra is *tilted* under the head (up to ~10-20° in a 30-45° curve),
-2. vertebrae are *rotated axially*, which moves the spinous process toward the concave side, so the
-   process line under-reads the X-ray Cobb,
-3. the lateral offset changes *within* one head footprint.
-
-Cheapest order:
-
-1. **Tilt test on the healthy phantom (about 1 hour, no new phantom).** Turn the phantom (or the
-   head) 15° in the skin plane and stamp x = -10, 0, +10 at two y rows, 5 reseats each (30 stamps).
-   If `locator.py predict` stays unbiased, item 1 is covered. If it's biased, add tilted stamps to
-   training (still healthy phantom).
-2. **One scoliotic phantom, validation only.** One curve near 30° with a known (designed) Cobb, and
-   axial rotation in the print if you can. Stamp the same 7 rows as the healthy raster. The minimum
-   is the 5 x-offsets × 3 reseats per row (105 stamps), because the raster average is what makes
-   Cobb work. One pass gives one Cobb reading; a second pass on another day tells you the repeatability.
-   No blanks needed for the model (one every 30-45 min is enough to watch disc health).
+![cobb](cobb_feasibility.png)
 
 ## Next for better accuracy (healthy phantom)
 
@@ -102,5 +102,4 @@ Cheapest order:
 - Randomise the order of x and y (this batch ran row by row, so y is confounded with time).
 - A second session on another day, so the CV can hold out a whole session.
 - Fix the IMU position (or use a printed grid), so a raster doesn't need typed positions.
-- More stamps per spot don't help much (5-stamp mean 3.2 vs 3.7 mm); more x offsets (±2.5, ±7.5, ±15)
-  and more rows help the Cobb fit more.
+- More head spots help more than more reseats at one spot; more rows (vertebrae) help the Cobb fit most.

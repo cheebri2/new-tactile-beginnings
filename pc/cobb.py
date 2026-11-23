@@ -12,7 +12,9 @@ estimate     takes the locator's per-stamp spine position (spine_x_mm = head x -
                         tilt over the scanned span (handles S-curves with --deg 3)
 feasibility  Monte Carlo with the locator's REAL held-out errors (`locator.py train` writes them):
              bend a virtual spine to a known Cobb angle, give every row the errors of real stamps
-             from one held-out row, fit, and compare. A stamp's error does not depend on where the
+             from one held-out row, fit, and compare. The head is stamped at fixed spots
+             from the straight midline (where each vertebra would be if centred), as on a
+             phantom whose vertebrae are flat and only shifted sideways. A stamp's error does not depend on where the
              spine is, only on the head-to-spine offset, so healthy-phantom errors carry over to a
              bent spine as long as each vertebra still sits square under the head (see report.md:
              that is exactly the part healthy data cannot test).
@@ -81,28 +83,37 @@ def feasibility(a):
     y_rows = np.asarray(rows, float) if a.levels is None else np.linspace(0, a.span, a.levels)
     y0, span = y_rows.min(), np.ptp(y_rows)
 
-    def one_draw(cobb, n_per_row, centred_only):
+    grid = np.array(sorted(df.x_mm.unique()))
+
+    def one_draw(cobb, heads, n_per_head):
+        """Head stamped at `heads` mm from the straight midline, n_per_head reseats each. A stamp's
+        label is head - shift; its error is drawn from real stamps at the nearest trained offset."""
+        shift = c_curve(cobb, y_rows, y0, span)
         xs = []
-        for _ in y_rows:
+        for s in shift:
             pool = pools[rng.integers(len(pools))]                    # a whole real row: keeps row bias
-            if centred_only:
-                pool = pool[pool.x_mm == 0]
-            e = pool.err_spine.to_numpy()
-            xs.append(np.median(rng.choice(e, size=n_per_row, replace=len(e) < n_per_row)))
-        x = c_curve(cobb, y_rows, y0, span) + np.array(xs)
+            e = []
+            for h in heads:
+                lab = grid[np.argmin(np.abs(grid - (h - s)))]
+                ee = pool[pool.x_mm == lab].err_spine.to_numpy()
+                e += list(rng.choice(ee, size=n_per_head, replace=len(ee) < n_per_head))
+            xs.append(s + np.mean(e))
+        x = np.array(xs)
         return fit_c(y_rows, x)[0], fit_poly(y_rows, x, 2)[0]
 
     out = []
-    for scheme, n, centred in [("1 stamp per row, head over spine", 1, True),
-                               ("3 stamps per row, head over spine", 3, True),
-                               ("5 stamps per row, head over spine", 5, True),
-                               ("raster: 25 stamps per row (5 x-offsets x 5)", 25, False)]:
+    schemes = [("1 stamp per vertebra, head on midline", [0], 1),
+               ("3 reseats per vertebra, head on midline", [0], 3),
+               ("head at -10, 0, +10 mm, 3 reseats each (9)", [-10, 0, 10], 3),
+               ("head at -10..+10 mm, 2 reseats each (10)", [-10, -5, 0, 5, 10], 2),
+               ("raster -10..+10 mm, 5 reseats each (25)", [-10, -5, 0, 5, 10], 5)]
+    for scheme, heads, n in schemes:
         for cobb in a.cobbs:
-            est = np.array([one_draw(cobb, n, centred) for _ in range(a.draws)])
+            est = np.array([one_draw(cobb, heads, n) for _ in range(a.draws)])
             for k, method in enumerate(["c-curve", "poly2"]):
                 e = est[:, k]
-                out.append({"scheme": scheme, "stamps_per_row": n, "true_cobb": cobb, "method": method,
-                            "mean_est": e.mean(), "bias": e.mean() - cobb, "sd": e.std(),
+                out.append({"scheme": scheme, "stamps_per_row": n * len(heads), "true_cobb": cobb,
+                            "method": method, "mean_est": e.mean(), "bias": e.mean() - cobb, "sd": e.std(),
                             "p95_abs_err": np.percentile(np.abs(e - cobb), 95),
                             "pct_read_ge_10": 100 * np.mean(e >= 10)})
     res = pd.DataFrame(out)
@@ -147,7 +158,8 @@ def main():
     e.add_argument("--deg", type=int, default=2)
     f = sub.add_parser("feasibility")
     f.add_argument("predictions", help="predictions.csv written by locator.py train")
-    f.add_argument("--cobbs", type=float, nargs="+", default=[0, 10, 20, 30, 45])
+    f.add_argument("--cobbs", type=float, nargs="+", default=[0, 10, 20, 30],
+                   help="true angles to simulate (above ~30 deg the shift leaves the trained +-10 mm)")
     f.add_argument("--levels", type=int, default=None, help="rows to simulate (default: the real rows)")
     f.add_argument("--span", type=float, default=120, help="mm covered by --levels")
     f.add_argument("--draws", type=int, default=2000)

@@ -5,23 +5,23 @@ Data `pc/final_data`, head turn `cw90`, discs left out (recorded names): dl. Pha
 
 | | value |
 |---|---|
-| mean abs error per stamp | 3.70 mm |
-| RMS error per stamp | 4.53 mm |
+| mean abs error per stamp | 4.52 mm (calibrated) |
+| RMS error per stamp | 5.86 mm |
 | guessing the mean x | 5.94 mm |
-| mean of the 5 repeats per spot | 3.23 mm |
-| side right/wrong for abs(x) >= 5 mm | 88 % correct |
-| error shared by a whole row (SD of row bias) | 1.33 mm |
-| error stamp-to-stamp inside a row (SD) | 4.42 mm |
-| slope of prediction vs truth | 0.63 (1 = unbiased) |
+| mean of the 5 repeats per spot | 3.48 mm |
+| side right/wrong for abs(x) >= 5 mm | 91 % correct |
+| error shared by a whole row (SD of row bias) | 2.12 mm |
+| error stamp-to-stamp inside a row (SD) | 5.47 mm |
+| shrink before calibration (slope) | 0.63; predictions are divided back out |
 
 Prediction by true x (mean, SD, n):
 
 | true x | mean | SD | n |
 |---|---|---|---|
-| -10 | -6.0 | 3.0 | 35 |
-| -5 | -3.3 | 2.4 | 34 |
-| 0 | -1.5 | 5.0 | 37 |
-| 5 | +2.3 | 3.4 | 35 |
-| 10 | +6.9 | 3.8 | 35 |
+| -10 | -9.0 | 4.7 | 35 |
+| -5 | -4.8 | 3.9 | 34 |
+| 0 | -1.8 | 8.0 | 37 |
+| 5 | +4.2 | 5.4 | 35 |
+| 10 | +11.5 | 6.1 | 35 |
 
-Mean abs error by y row: y=0: 3.8, y=20: 4.4, y=40: 2.8, y=60: 3.5, y=80: 3.7, y=100: 4.6, y=120: 3.1
+Mean abs error by y row: y=0: 3.7, y=20: 5.2, y=40: 4.1, y=60: 3.2, y=80: 6.6, y=100: 5.2, y=120: 3.7

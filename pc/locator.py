@@ -46,12 +46,17 @@ def train(a):
     print(f"{len(st)} stamps, {X.shape[1]} features (phantom discs {', '.join(chans)}, "
           f"{len(freqs)} freqs {freqs[0]:g}-{freqs[-1]:g} Hz), {len(set(groups))} CV groups by {a.group}")
 
-    pred = locate.grouped_cv(X, y, groups)              # nested: alpha picked inside each fold
+    raw = locate.grouped_cv(X, y, groups)               # nested: alpha picked inside each fold
+    # Ridge shrinks toward the mean (a true 10 mm reads ~6.5). Undo it with a straight line fitted
+    # to the held-out predictions, so a stamp with the head far from the spine isn't under-read.
+    slope_raw, icpt_raw = np.polyfit(y, raw, 1)
+    pred = (raw - icpt_raw) / slope_raw
     err = pred - y
     alpha = locate.pick_alpha(X, y, groups)
     model = locate.ridge_fit(X, y, alpha)
 
     res = st[["trial_id", "session", "repeat", "x_mm", "y_mm", "imu_x_mm", "imu_y_mm"]].copy()
+    res["pred_raw_mm"] = raw
     res["pred_x_mm"] = pred
     res["error_mm"] = err
     out = Path(a.results)
@@ -72,7 +77,8 @@ def train(a):
         "side_correct_pct": float(100 * np.mean(np.sign(pred[side]) == np.sign(y[side]))),
         "row_bias_sd_mm": float(row_bias.std()),
         "within_row_sd_mm": float(res.groupby("y_mm").error_mm.std().mean()),
-        "slope": float(np.polyfit(y, pred, 1)[0]),
+        "slope_before_calibration": float(slope_raw),
+        "calibration": {"slope": float(slope_raw), "intercept": float(icpt_raw)},
     }
     meta = {"trained": dt.datetime.now().isoformat(timespec="seconds"), "data": str(a.data),
             "turn": a.turn, "bad_discs": list(a.bad_discs), "features": "share log10 amp",
@@ -84,14 +90,14 @@ def train(a):
              f"{', '.join(a.bad_discs) or 'none'}. Phantom discs used: {', '.join(chans)}.",
              f"{len(y)} stamps; each {a.group} group held out in turn (nested ridge alpha; final alpha {alpha:g}).", "",
              "| | value |", "|---|---|",
-             f"| mean abs error per stamp | {metrics['mae_mm']:.2f} mm |",
+             f"| mean abs error per stamp | {metrics['mae_mm']:.2f} mm (calibrated) |",
              f"| RMS error per stamp | {metrics['rmse_mm']:.2f} mm |",
              f"| guessing the mean x | {base:.2f} mm |",
              f"| mean of the 5 repeats per spot | {metrics['mae_5stamp_mean_mm']:.2f} mm |",
              f"| side right/wrong for abs(x) >= 5 mm | {metrics['side_correct_pct']:.0f} % correct |",
              f"| error shared by a whole row (SD of row bias) | {metrics['row_bias_sd_mm']:.2f} mm |",
              f"| error stamp-to-stamp inside a row (SD) | {metrics['within_row_sd_mm']:.2f} mm |",
-             f"| slope of prediction vs truth | {metrics['slope']:.2f} (1 = unbiased) |", "",
+             f"| shrink before calibration (slope) | {slope_raw:.2f}; predictions are divided back out |", "",
              "Prediction by true x (mean, SD, n):", "", "| true x | mean | SD | n |", "|---|---|---|---|"]
     lines += [f"| {x:g} | {r['mean']:+.1f} | {r['std']:.1f} | {int(r['size'])} |" for x, r in by_x.iterrows()]
     lines += ["", "Mean abs error by y row: " + ", ".join(f"y={k:g}: {v:.1f}" for k, v in by_row.items())]
@@ -133,7 +139,8 @@ def predict(a):
     trials, feats = locate.load(a.data, turn, bad)
     st = stamps(trials)
     X, *_ = locate.share_matrix(feats, st.trial_id, m["channels"], m["freqs"], m["f_min"], m["f_max"])
-    st["pred_x_mm"] = locate.ridge_predict(m, X)
+    cal = m["cv"].get("calibration", {"slope": 1.0, "intercept": 0.0})
+    st["pred_x_mm"] = (locate.ridge_predict(m, X) - cal["intercept"]) / cal["slope"]
     hx, hy = ("imu_x_mm", "imu_y_mm") if a.position == "imu" else ("x_mm", "y_mm")
     st["head_x_mm"], st["head_y_mm"] = st[hx], st[hy]
     st["spine_x_mm"] = st.head_x_mm - st.pred_x_mm

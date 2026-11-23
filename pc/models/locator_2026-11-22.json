@@ -1,5 +1,5 @@
 {
- "trained": "2026-11-23T21:57:05",
+ "trained": "2026-11-23T22:12:19",
  "data": "final_data",
  "turn": "cw90",
  "bad_discs": [
@@ -13,14 +13,18 @@
   "n_stamps": 176,
   "cv_group": "y_mm",
   "alpha": 10,
-  "mae_mm": 3.69911251032495,
-  "rmse_mm": 4.5282889800391875,
+  "mae_mm": 4.522209424342379,
+  "rmse_mm": 5.857582778535146,
   "baseline_mae_mm": 5.943310950413224,
-  "mae_5stamp_mean_mm": 3.2305439023925366,
-  "side_correct_pct": 87.76978417266187,
-  "row_bias_sd_mm": 1.3306240832971723,
-  "within_row_sd_mm": 4.415849739733203,
-  "slope": 0.6268991359157103
+  "mae_5stamp_mean_mm": 3.4832060685478825,
+  "side_correct_pct": 91.36690647482014,
+  "row_bias_sd_mm": 2.1214214459124734,
+  "within_row_sd_mm": 5.466972720650918,
+  "slope_before_calibration": 0.6268991359157103,
+  "calibration": {
+   "slope": 0.6268991359157103,
+   "intercept": -0.33610290726935105
+  }
  },
  "channels": [
   "dl",
