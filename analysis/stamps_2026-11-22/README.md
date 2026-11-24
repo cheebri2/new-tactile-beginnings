@@ -1,5 +1,11 @@
 # Healthy-phantom stamps, 2026-11-22: locator and Cobb feasibility
 
+> **Update 2026-11-24:** the severe-mold test (`analysis/severe_2026-11-23/README.md`) shows this
+> healthy-trained locator mostly tracks where the head sits in the mold, not the spine. It read the
+> 47° severe mold as 21°. The Cobb simulation below assumed errors carry over from healthy to scoliotic
+> molds, so it is optimistic until the model is trained across molds. The process heights below come
+> from bri's first estimate; the mold maps (`MOLDS` in `pc/piezo/locate.py`) supersede them.
+
 Data: `pc/final_data` on bri's laptop (not in the repo). 177 vertebra stamps on the healthy phantom,
 x = -10, -5, 0, +5, +10 mm (head right of spine) at y = 0, 20, ... 120 mm, 5 reseats each, depth
 15 mm, plus 60 blanks (one before every block). One session. Head turned 90° clockwise (its up side
