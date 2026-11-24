@@ -29,19 +29,45 @@ import pandas as pd
 from piezo import locate
 
 
-def stamps(trials):
+def stamps(trials, objects=None):
     t = trials[(trials.test_type != "blank") & (trials.object.fillna("none") != "none")]
+    if objects:
+        t = t[t.object.isin(objects)]
     ok = (t.timing == "events") & (t.stream_lost_blocks.fillna(0) == 0) & (t.stream_bad_blocks.fillna(0) == 0)
     if (~ok).any():
         print(f"dropping {int((~ok).sum())} stamps with missing timing or lost USB data")
     return t[ok].reset_index(drop=True)
 
 
+def mold_of(st):
+    m = st.object.map(locate.OBJECT_MOLD)
+    if m.isna().any():
+        raise SystemExit(f"no mold map for objects {sorted(st.object[m.isna()].unique())}; add them to "
+                         "OBJECT_MOLD in piezo/locate.py")
+    return m
+
+
+def spine_x(st, y_col="y_mm"):
+    return np.array([locate.spine_x_at(y, mo)[()] for y, mo in zip(st[y_col], mold_of(st))])
+
+
+def levels(st, y_col="y_mm"):
+    out = [locate.nearest_vertebra(y, mo) for y, mo in zip(st[y_col], mold_of(st))]
+    return (np.array([o[0][0] for o in out]), np.array([o[1][0] for o in out]),
+            np.array([o[2][0] for o in out]))
+
+
 def train(a):
     trials, feats = locate.load(a.data, a.turn, a.bad_discs)
-    st = stamps(trials)
+    st = stamps(trials, a.objects)
     X, names, chans, freqs = locate.share_matrix(feats, st.trial_id, f_min=a.f_min, f_max=a.f_max)
-    y = st.x_mm.to_numpy(float)
+    # Label = head offset from the spine under the sensor centre. --x-from centreline: typed x is from
+    # the mold centreline, so subtract the mold's spine position there (aligned mold: within 1.5 mm).
+    if a.mold_correct:
+        st["x_label_mm"] = st.x_mm - spine_x(st)
+    else:
+        st["x_label_mm"] = st.x_mm
+    y = st.x_label_mm.to_numpy(float)
     groups = st[a.group].astype(str).to_numpy()
     print(f"{len(st)} stamps, {X.shape[1]} features (phantom discs {', '.join(chans)}, "
           f"{len(freqs)} freqs {freqs[0]:g}-{freqs[-1]:g} Hz), {len(set(groups))} CV groups by {a.group}")
@@ -56,8 +82,9 @@ def train(a):
     model = locate.ridge_fit(X, y, alpha)
 
     res = st[["trial_id", "session", "repeat", "x_mm", "y_mm", "imu_x_mm", "imu_y_mm"]].copy()
-    if a.vertebrae:
-        res["level"], res["dy_mm"] = locate.nearest_vertebra(res.y_mm, a.vertebrae)
+    res["x_typed_mm"] = res["x_mm"]
+    res["x_mm"] = y                                       # the label: head offset from the spine
+    res["level"], res["dy_mm"], _ = levels(st)
     res["pred_raw_mm"] = raw
     res["pred_x_mm"] = pred
     res["error_mm"] = err
@@ -66,10 +93,10 @@ def train(a):
     res.to_csv(out / "predictions.csv", index=False)
 
     base = float(np.mean(np.abs(y - y.mean())))
-    by_x = res.groupby("x_mm").pred_x_mm.agg(["mean", "std", "size"])
+    by_x = res.groupby("x_typed_mm").pred_x_mm.agg(["mean", "std", "size"])
     by_row = res.assign(ae=np.abs(err)).groupby("y_mm").ae.mean()
     row_bias = res.groupby("y_mm").error_mm.mean()
-    cond = res.groupby(["x_mm", "y_mm"]).pred_x_mm.mean().reset_index()
+    cond = res.groupby(["x_typed_mm", "y_mm"])[["pred_x_mm", "x_mm"]].mean().reset_index()
     side = np.abs(y) >= 5
     metrics = {
         "n_stamps": int(len(y)), "cv_group": a.group, "alpha": alpha,
@@ -84,7 +111,7 @@ def train(a):
     }
     meta = {"trained": dt.datetime.now().isoformat(timespec="seconds"), "data": str(a.data),
             "turn": a.turn, "bad_discs": list(a.bad_discs), "features": "share log10 amp",
-            "f_min": a.f_min, "f_max": a.f_max, "vertebrae_y": list(a.vertebrae or []), "target": "x_mm (head right of spine, mm)", "cv": metrics}
+            "f_min": a.f_min, "f_max": a.f_max, "mold_correct": a.mold_correct, "target": "x_mm (head right of spine, mm)", "cv": metrics}
     locate.save_model(a.model, model, chans, freqs, meta)
 
     lines = [f"# Locator cross-validation ({dt.date.today()})", "",
@@ -100,10 +127,10 @@ def train(a):
              f"| error shared by a whole row (SD of row bias) | {metrics['row_bias_sd_mm']:.2f} mm |",
              f"| error stamp-to-stamp inside a row (SD) | {metrics['within_row_sd_mm']:.2f} mm |",
              f"| shrink before calibration (slope) | {slope_raw:.2f}; predictions are divided back out |", "",
-             "Prediction by true x (mean, SD, n):", "", "| true x | mean | SD | n |", "|---|---|---|---|"]
+             "Prediction by typed x (mean, SD, n):", "", "| typed x | mean | SD | n |", "|---|---|---|---|"]
     lines += [f"| {x:g} | {r['mean']:+.1f} | {r['std']:.1f} | {int(r['size'])} |" for x, r in by_x.iterrows()]
     lines += ["", "Mean abs error by y row: " + ", ".join(f"y={k:g}: {v:.1f}" for k, v in by_row.items())]
-    if a.vertebrae:
+    if True:
         d = res.assign(ae=np.abs(err)).groupby("dy_mm").ae.agg(["mean", "size"])
         lines += ["", "Mean abs error by how far the nearest process is above the sensor centre (dy): "
                   + ", ".join(f"dy={k:+g}: {r['mean']:.1f} (n={int(r['size'])})" for k, r in d.iterrows())]
@@ -121,7 +148,7 @@ def plot(res, path, m):
     rng = np.random.default_rng(0)
     jit = rng.uniform(-0.8, 0.8, len(res))
     ax[0].scatter(res.x_mm + jit, res.pred_x_mm, s=12, alpha=0.5, color="#3b6ea5", label="one stamp (held out)")
-    g = res.groupby("x_mm").pred_x_mm
+    g = res.groupby(res.x_mm.round(0)).pred_x_mm
     ax[0].errorbar(g.mean().index, g.mean(), yerr=g.std(), fmt="o", color="#c0392b", capsize=4, label="mean ± SD")
     lim = [res.x_mm.min() - 4, res.x_mm.max() + 4]
     ax[0].plot(lim, lim, "k--", lw=1, label="perfect")
@@ -143,16 +170,14 @@ def predict(a):
     turn = a.turn if a.turn is not None else m["turn"]
     bad = a.bad_discs if a.bad_discs is not None else m["bad_discs"]
     trials, feats = locate.load(a.data, turn, bad)
-    st = stamps(trials)
+    st = stamps(trials, a.objects)
     X, *_ = locate.share_matrix(feats, st.trial_id, m["channels"], m["freqs"], m["f_min"], m["f_max"])
     cal = m["cv"].get("calibration", {"slope": 1.0, "intercept": 0.0})
     st["pred_x_mm"] = (locate.ridge_predict(m, X) - cal["intercept"]) / cal["slope"]
     hx, hy = ("imu_x_mm", "imu_y_mm") if a.position == "imu" else ("x_mm", "y_mm")
     st["head_x_mm"], st["head_y_mm"] = st[hx], st[hy]
     st["spine_x_mm"] = st.head_x_mm - st.pred_x_mm
-    vy = a.vertebrae if a.vertebrae is not None else m.get("vertebrae_y")
-    if vy:
-        st["level"], st["dy_mm"] = locate.nearest_vertebra(st.head_y_mm, vy)
+    st["level"], st["dy_mm"], _ = levels(st, "head_y_mm")
     out = Path(a.results)
     out.mkdir(parents=True, exist_ok=True)
     cols = ["trial_id", "x_mm", "y_mm", "head_x_mm", "head_y_mm", "pred_x_mm", "spine_x_mm"]
@@ -173,9 +198,12 @@ def main():
     t.add_argument("--f-min", type=float, default=50)
     t.add_argument("--f-max", type=float, default=200,
                    help="top of the band (default 200 Hz: 50-190 Hz did best on the 2026-11-22 batch)")
-    t.add_argument("--vertebrae", type=float, nargs="*", default=list(locate.PHANTOM_VERTEBRAE_Y),
-                   help="stamp y at which each vertebra is centred under the head (default: bri's 5-vertebra "
-                        "phantom 0 30 60 85 125); adds level and dy_mm to predictions.csv. Pass nothing to skip")
+    t.add_argument("--objects", nargs="*", default=["healthy_vertebra"],
+                   help="which objects to train on (default: the healthy phantom only)")
+    t.add_argument("--mold-correct", action="store_true",
+                   help="typed x is from the mold centreline: subtract the mold map's spine x under the sensor. "
+                        "Off by default: on the aligned mold (spine within 1.5 mm) it made the 11-22 fit worse "
+                        "(4.1 vs 3.7 mm), so the map's sub-2 mm detail isn't trusted")
     t.add_argument("--model", default="models/locator.json")
     t.add_argument("--results", default="training/results/locator")
     q = sub.add_parser("predict")
@@ -184,8 +212,7 @@ def main():
     q.add_argument("--turn", default=None, help="default: same as the training data")
     q.add_argument("--bad-discs", nargs="*", default=None)
     q.add_argument("--position", choices=["typed", "imu"], default="typed")
-    q.add_argument("--vertebrae", type=float, nargs="*", default=None,
-                   help="stamp y at which each vertebra is centred (default: the model's)")
+    q.add_argument("--objects", nargs="*", default=None, help="only these objects (default: all)")
     q.add_argument("--results", default="training/results/locator_predict")
     a = p.parse_args()
     train(a) if a.cmd == "train" else predict(a)

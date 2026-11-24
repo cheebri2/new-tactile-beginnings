@@ -89,20 +89,43 @@ def share_matrix(feats: pd.DataFrame, trial_ids, channels=None, freqs=None, f_mi
 
 # ------------------------------------------------------------------ phantom geometry
 
-# bri's 5-vertebra phantoms (2026-11-23): stamp y (mold bottom to sensor bottom, mm) at which each
-# vertebra's spinous-process peak sits at the centre of the 94 mm sensor (peak ~45-50 mm above the
-# sensor's bottom edge).
-PHANTOM_VERTEBRAE_Y = (0.0, 30.0, 60.0, 85.0, 125.0)
+# bri's mold maps (2026-11-24, "Aligned/Moderate/Severe Spine Positioning"). Each mold is 107 mm wide
+# and 219.9 mm long. Per vertebra T8..T12 (top to bottom): spinous-process centre x from the mold
+# centreline (mm, + = right) = (distance to left edge - distance to right edge) / 2, and height above the
+# mold's bottom edge (mm) from the map's gaps. Stamp y is mold bottom to sensor bottom; the process under
+# the sensor centre is SENSOR_CENTRE_MM above that.
 SENSOR_CENTRE_MM = 47.0
+LEVELS = ("T8", "T9", "T10", "T11", "T12")
+MOLDS = {
+    #              x shift (mm) T8..T12                 height above mold bottom (mm) T8..T12
+    "aligned":  {"x": (-1.5, 1.0, 1.4, 0.3, 1.1),      "y": (152.2, 122.3, 98.2, 70.3, 38.6)},
+    "moderate": {"x": (-6.3, 3.3, 7.4, 3.9, -3.75),    "y": (163.2, 133.3, 109.2, 81.3, 48.1)},
+    "severe":   {"x": (-11.9, 2.5, 8.9, 3.9, -9.3),    "y": (163.3, 133.4, 109.3, 81.3, 48.1)},
+}
+# which mold each recorded object was stamped on
+OBJECT_MOLD = {"healthy_vertebra": "aligned", "moderate_scoliosis": "moderate", "severe_scoliosis": "severe"}
 
 
-def nearest_vertebra(y_mm, vertebrae=PHANTOM_VERTEBRAE_Y):
-    """(level 1..n, dy_mm) for stamps at y_mm: dy = how far the nearest process peak is above the
-    sensor centre (+ = process above centre). Both in the stamp-y convention."""
-    v = np.asarray(vertebrae, float)
-    y = np.atleast_1d(np.asarray(y_mm, float))
-    k = np.abs(y[:, None] - v[None, :]).argmin(axis=1)
-    return k + 1, v[k] - y
+def mold(name):
+    m = MOLDS[name]
+    return np.asarray(m["x"], float), np.asarray(m["y"], float)
+
+
+def nearest_vertebra(stamp_y_mm, mold_name="aligned"):
+    """(level name, dy_mm, process x) for stamps at stamp_y_mm on a mold: the vertebra whose process is
+    nearest the sensor centre, dy = process height - sensor-centre height (+ = process above centre)."""
+    xs, ys = mold(mold_name)
+    c = np.atleast_1d(np.asarray(stamp_y_mm, float)) + SENSOR_CENTRE_MM
+    k = np.abs(c[:, None] - ys[None, :]).argmin(axis=1)
+    return np.asarray(LEVELS)[k], ys[k] - c, xs[k]
+
+
+def spine_x_at(stamp_y_mm, mold_name="aligned"):
+    """Spine centre x (mm from the mold centreline) under the sensor centre, interpolated between
+    processes (held flat beyond the end vertebrae)."""
+    xs, ys = mold(mold_name)
+    o = np.argsort(ys)
+    return np.interp(np.asarray(stamp_y_mm, float) + SENSOR_CENTRE_MM, ys[o], xs[o])
 
 
 # ------------------------------------------------------------------ ridge

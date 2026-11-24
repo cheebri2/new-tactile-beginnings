@@ -64,11 +64,11 @@ def c_curve(cobb_deg, y, y0, span):
     return a * np.sin(np.pi * (np.asarray(y) - y0) / span)
 
 
-def rows_from_stamps(df, x_col="spine_x_mm", y_col="head_y_mm", max_dy=10.0):
+def rows_from_stamps(df, x_col="spine_x_mm", y_col="head_y_mm", max_dy=15.0):
     """(y, spine x) per vertebra: median of the stamps whose nearest process is within max_dy of the
     sensor centre, placed at that vertebra's stamp y. Without a level column: one point per y row."""
     if "level" in df and "dy_mm" in df:
-        d = df[df.dy_mm.abs() <= max_dy].assign(vy=lambda t: t[y_col] + t.dy_mm)
+        d = df[df.dy_mm.abs() <= max_dy].assign(vy=lambda t: t[y_col] + 47.0 + t.dy_mm)  # process height
         r = d.groupby("level").agg(vy=("vy", "median"), x=(x_col, "median"))
         return r.vy.to_numpy(float), r.x.to_numpy(float)
     r = df.groupby(df[y_col].round(0))[x_col].median()
@@ -179,16 +179,16 @@ def main():
     e = sub.add_parser("estimate")
     e.add_argument("predictions")
     e.add_argument("--deg", type=int, default=2)
-    e.add_argument("--max-dy", type=float, default=10.0,
+    e.add_argument("--max-dy", type=float, default=15.0,
                    help="use stamps whose nearest process is within this of the sensor centre (mm)")
     f = sub.add_parser("feasibility")
     f.add_argument("predictions", help="predictions.csv written by locator.py train")
     f.add_argument("--cobbs", type=float, nargs="+", default=[0, 10, 20, 30],
                    help="true angles to simulate (above ~30 deg the shift leaves the trained +-10 mm)")
-    f.add_argument("--level-y", type=float, nargs="*", default=[0, 30, 60, 85, 125],
-                   help="stamp y of each vertebra to simulate (default: bri's 5-vertebra phantom). "
+    f.add_argument("--level-y", type=float, nargs="*", default=[48.1, 81.3, 109.3, 133.4, 163.3],
+                   help="process heights to simulate (default: the severe/moderate mold map, T12..T8). "
                         "Pass nothing to use the real rows")
-    f.add_argument("--max-dy", type=float, default=5.0,
+    f.add_argument("--max-dy", type=float, default=None,
                    help="draw errors only from real rows whose nearest process is within this of the "
                         "sensor centre (needs level/dy_mm in predictions.csv)")
     f.add_argument("--levels", type=int, default=None, help="evenly spaced rows to simulate instead")

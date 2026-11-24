@@ -50,14 +50,14 @@ def test_cobb_fits_recover_angle():
     assert fit_c(y, np.zeros_like(y))[0] < 1e-6
 
 
-def test_nearest_vertebra():
-    lvl, dy = locate.nearest_vertebra([0, 20, 40, 80, 100, 120])
-    assert list(lvl) == [1, 2, 2, 4, 4, 5]
-    assert list(dy) == [0, 10, -10, 5, -15, 5]
+def test_mold_levels():
+    lvl, dy, x = locate.nearest_vertebra([0, 30, 60, 85, 125], "severe")
+    assert list(lvl) == ["T12", "T11", "T10", "T9", "T8"]
+    assert np.allclose(dy, [1.1, 4.3, 2.3, 1.4, -8.7], atol=0.05)
+    assert np.allclose(x, [-9.3, 3.9, 8.9, 2.5, -11.9])
 
 
 def test_segment_cobb_matches_severe_design():
     from cobb import fit_segments
-    y = np.array([0, 30, 60, 85, 125]) + 47.0
-    x = np.array([-14, 0, 4, -3, -17.0])          # bri's severe phantom, bottom to top
-    assert abs(fit_segments(y, x)[0] - 44.3) < 0.1
+    x, y = locate.mold("severe")                   # bri's mold map
+    assert abs(fit_segments(y, x)[0] - 47.4) < 0.1
