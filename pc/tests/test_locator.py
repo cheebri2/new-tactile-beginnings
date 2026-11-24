@@ -54,3 +54,10 @@ def test_nearest_vertebra():
     lvl, dy = locate.nearest_vertebra([0, 20, 40, 80, 100, 120])
     assert list(lvl) == [1, 2, 2, 4, 4, 5]
     assert list(dy) == [0, 10, -10, 5, -15, 5]
+
+
+def test_segment_cobb_matches_severe_design():
+    from cobb import fit_segments
+    y = np.array([0, 30, 60, 85, 125]) + 47.0
+    x = np.array([-14, 0, 4, -3, -17.0])          # bri's severe phantom, bottom to top
+    assert abs(fit_segments(y, x)[0] - 44.3) < 0.1

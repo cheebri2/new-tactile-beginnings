@@ -48,6 +48,17 @@ def fit_poly(y, x, deg=2):
     return float(tilt.max() - tilt.min()), tilt, np.poly1d(p)
 
 
+def fit_segments(y, x):
+    """(Cobb deg, tilt of each segment deg): tilt between neighbouring vertebrae
+    theta_k = atan((x_k+1 - x_k) / (y_k+1 - y_k)); Cobb = most tilted one way minus the other.
+    Closest to the clinical definition (end vertebrae = the most tilted ones). Needs no curve shape,
+    but each point's error goes straight into two tilts, so it is the noisiest."""
+    o = np.argsort(y)
+    y, x = np.asarray(y, float)[o], np.asarray(x, float)[o]
+    t = np.degrees(np.arctan(np.diff(x) / np.diff(y)))
+    return float(t.max() - t.min()), t
+
+
 def c_curve(cobb_deg, y, y0, span):
     a = np.tan(np.radians(cobb_deg / 2)) * span / np.pi
     return a * np.sin(np.pi * (np.asarray(y) - y0) / span)
@@ -74,10 +85,12 @@ def estimate(a):
         raise SystemExit("need stamps in at least 3 y rows")
     c_c, amp, _ = fit_c(y, x)
     c_p, _, _ = fit_poly(y, x, a.deg)
+    c_s, tilts = fit_segments(y, x)
     print("level y(mm)  spine x (mm, median of stamps)")
     for yy, xx in zip(y, x):
         print(f"     {yy:5.0f}  {xx:+6.1f}")
-    print(f"\nCobb, c-curve fit: {c_c:.1f} deg (bow {amp:+.1f} mm)\nCobb, poly deg {a.deg}: {c_p:.1f} deg")
+    print(f"\nCobb, c-curve fit: {c_c:.1f} deg (bow {amp:+.1f} mm)\nCobb, poly deg {a.deg}: {c_p:.1f} deg"
+          f"\nCobb, segment tilts: {c_s:.1f} deg (tilts {', '.join(f'{v:+.1f}' for v in tilts)})")
 
 
 def feasibility(a):
