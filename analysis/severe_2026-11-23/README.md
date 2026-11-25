@@ -39,6 +39,47 @@ a third tracks the spine. On a straight mold those are the same thing, so the he
 it. A likely cause is the mold's side walls: the 107 mm mold is barely wider than the head, so ±10 mm
 moves the outer discs much closer to an edge. With 5 rows this is suggestive, not proven.
 
+## Phase between discs instead of amplitude (2026-11-24)
+
+`phase_vs_amplitude.py`: same ridge model, trained on the healthy mold only, different features.
+
+| features (50-190 Hz) | healthy CV MAE | severe MAE | prediction = a·x + b·S (spine reader: 1, -1) | severe Cobb (design 47.4°) |
+|---|---|---|---|---|
+| amplitude shares | 3.7 mm | 7.0 mm | 0.72 x - 0.27 S | 20.9° |
+| phase vs drive | 3.2 mm | 5.3 mm | 0.76 x - 0.51 S | 25.8° |
+| **phase between discs** | 3.8 mm | **4.7 mm** | **0.92 x - 0.70 S** | **34.6° (± 5.7°)** |
+| resonance peak frequency | 7.1 mm | 13 mm | no signal | |
+
+bri's hunch holds: amplitude follows contact pressure and the head's place in the mold. The phase of
+each disc *relative to another disc* cancels whatever shifts all discs together, and it follows the
+spine about 2.5 times better. Per vertebra (bottom to top) it reads -7.2, +0.6, +8.0, -0.7, -7.5 mm vs
+design -9.3, +3.9, +8.9, +2.5, -11.9: right shape, about 70 % of the size, so the Cobb still under-reads.
+It is now the default (`locator.py train --features phase-rel`, model `pc/models/locator_phase_2026-11-22.json`).
+
+Honesty note: the feature set was picked after seeing the severe results, so the severe mold is no
+longer a clean test. The moderate mold (design 30.8°) is: stamp it with the same layout and run
+`validate_severe.py --mold moderate --model models/locator_phase_2026-11-22.json` (object name
+`moderate_scoliosis`). With 50-400 Hz the severe Cobb read 43.5 ± 7.4° but the per-stamp error was
+worse (5.8 mm), so 50-190 Hz stays the default.
+
+## Screening (scoliosis yes/no) from stamps only on the centreline
+
+Stamping only at x = 0 down the spine, then either the Cobb from those points or the spread (SD) of
+the 5 spine positions:
+
+| | healthy | severe |
+|---|---|---|
+| Cobb, 1 stamp per vertebra (phase) | 39.8 ± 11.7° | 41.6 ± 8.4° |
+| spread SD, 1 stamp per vertebra (phase) | 4.8 ± 1.5 mm | 6.3 ± 0.9 mm (AUC 0.82) |
+| spread SD, 3 stamps per vertebra (phase) | 4.1 ± 0.5 mm | 5.8 mm (one scan) |
+| design spread SD | 1.0 mm | 7.9 mm (moderate 5.0) |
+
+The Cobb from centreline-only stamps is useless (healthy reads ~40°): x = 0 is the model's noisiest
+spot and segment tilts amplify that. The spread is more promising: with 3 centreline stamps per
+vertebra the one severe scan sits above every resampled healthy scan. But that's one severe scan,
+taken on a different day than the healthy ones, and the moderate mold's design spread (5.0 mm) would
+sit right at the healthy noise floor (about 4 mm). So: probably yes for severe, unknown for moderate.
+
 ## Training on the severe stamps too (bri's suggestion)
 
 `mix.py`: healthy + severe stamps, labels = head offset from the spine (x - S).

@@ -87,6 +87,34 @@ def share_matrix(feats: pd.DataFrame, trial_ids, channels=None, freqs=None, f_mi
     return cube.reshape(len(trial_ids), -1), names, channels, freqs
 
 
+def relphase_matrix(feats: pd.DataFrame, trial_ids, channels=None, freqs=None, f_min=50, f_max=200,
+                    ref="ur"):
+    """Rows = trials, columns cos/sin of each disc's phase minus the `ref` disc's phase (vs drive), per
+    frequency. Pressing harder or reseating shifts all discs' phase and gain together, so the phase
+    *between* discs cancels it. On the 2026-11-23 severe mold this followed the spine far better than
+    amplitude (prediction 0.92 x - 0.70 S vs 0.72 x - 0.27 S). Returns (matrix, names, channels, freqs)."""
+    f = feats[(feats.freq_hz >= f_min) & (feats.freq_hz <= f_max)]
+    channels = sorted(f.channel.unique()) if channels is None else list(channels)
+    freqs = sorted(f.freq_hz.unique()) if freqs is None else [float(v) for v in freqs]
+    p = f.pivot_table(index="trial_id", columns=["channel", "freq_hz"], values="phase_deg")
+    missing = [t for t in trial_ids if t not in p.index]
+    if missing:
+        raise ValueError(f"{len(missing)} trials have no features, e.g. {missing[0]}")
+    ph = np.stack([p.loc[list(trial_ids), (ch, slice(None))][[(ch, q) for q in freqs]].to_numpy()
+                   for ch in channels], axis=1)
+    if np.isnan(ph).any():
+        raise ValueError("phase vs drive missing (needs tone events from the one-board firmware)")
+    rel = np.radians(ph - ph[:, [channels.index(ref)]])
+    keep = [i for i, c in enumerate(channels) if c != ref]
+    rel = rel[:, keep]
+    names = [f"{t}_{channels[i]}-{ref}_{q:g}" for t in ("cos", "sin") for i in keep for q in freqs]
+    X = np.hstack([np.cos(rel).reshape(len(trial_ids), -1), np.sin(rel).reshape(len(trial_ids), -1)])
+    return X, names, channels, freqs
+
+
+FEATURES = {"phase-rel": relphase_matrix, "share-amp": share_matrix}
+
+
 # ------------------------------------------------------------------ phantom geometry
 
 # bri's mold maps (2026-11-24, "Aligned/Moderate/Severe Spine Positioning"). Each mold is 107 mm wide

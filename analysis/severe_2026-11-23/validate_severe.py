@@ -34,7 +34,8 @@ a = p.parse_args()
 m = locate.load_model(a.model)
 trials, feats = locate.load(a.data, m["turn"], m["bad_discs"])
 st = trials[trials.object == a.object].reset_index(drop=True)
-X, *_ = locate.share_matrix(feats, st.trial_id, m["channels"], m["freqs"], m["f_min"], m["f_max"])
+X, *_ = locate.FEATURES[m.get("feature_set", "share-amp")](feats, st.trial_id, m["channels"], m["freqs"],
+                                                          m["f_min"], m["f_max"])
 cal = m["cv"]["calibration"]
 st["pred_x_mm"] = (locate.ridge_predict(m, X) - cal["intercept"]) / cal["slope"]
 xs, ys = locate.mold(a.mold)
