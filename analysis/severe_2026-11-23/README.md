@@ -80,6 +80,24 @@ vertebra the one severe scan sits above every resampled healthy scan. But that's
 taken on a different day than the healthy ones, and the moderate mold's design spread (5.0 mm) would
 sit right at the healthy noise floor (about 4 mm). So: probably yes for severe, unknown for moderate.
 
+### Centred stamps only, one pass = one x = 0 stamp per vertebra (`centred_only.py`)
+
+![centred](centred_only.png)
+
+| | spread SD | C-bow (half-sine fit, + = middle bows right) | segment Cobb |
+|---|---|---|---|
+| severe pass 1 / 2 / 3 | 7.2 / 5.8 / 5.7 mm | **+13.4 / +13.4 / +12.5 mm** | 54 / 31 / 33° |
+| healthy pass 1-5 | 2.3-7.5 mm | **-2.7 to +5.0 mm** | 23-53° |
+| design severe / moderate / aligned | 8.0 / - / 1.0 mm | +19.0 / +12.0 / +1.4 mm | 47 / 31 / 7° |
+
+The C-bow is the useful number: it asks "do the 5 points make one smooth curve", so a single noisy
+vertebra (healthy pass 1 reads T9 at -17 mm) barely moves it, while it inflates the spread and the
+segment Cobb. Every single severe pass reads 12.5-13.4 mm; every healthy pass reads -2.7 to +5.0 mm.
+A threshold around 8 mm splits all 8 passes correctly. Limits: one severe mold scanned on one day,
+a C-shaped curve only (an S-curve needs a different shape fit), the phase features were picked after
+seeing severe, and the model reads about 70 % of the true bow, so the moderate mold (design bow 12 mm,
+expected reading ~8.4 mm) would land right on that threshold.
+
 ## Training on the severe stamps too (bri's suggestion)
 
 `mix.py`: healthy + severe stamps, labels = head offset from the spine (x - S).
