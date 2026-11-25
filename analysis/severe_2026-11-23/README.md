@@ -125,7 +125,33 @@ phase-between-discs features were tested with five corrections (healthy mold onl
 The better fix for drift is in the protocol: stamp rows and x positions in random order, so drift
 averages out instead of lining up with y.
 
-## Training on the severe stamps too (bri's suggestion)
+## Phase-only model trained on healthy + severe (2026-11-25, `mixed_phase.py`)
+
+Labels: head offset from the spine (severe: typed x - mold-map spine x). Design: spine -9.3, +3.9,
++8.9, +2.5, -11.9 mm; Cobb 47.4°; C-bow 19.0 mm.
+
+| test | severe MAE | prediction = a·x + b·S | severe spine (median per vertebra) | Cobb | centred C-bow per pass |
+|---|---|---|---|---|---|
+| healthy only | 4.7 mm | 0.92 x - 0.70 S | -7.2, +0.6, +8.0, -0.7, -7.5 | 34.6° | 12.5-13.4 mm |
+| + other 4 severe rows → held-out row | 7.0 mm | 1.03 x - 0.64 S | -7.7, +3.3, +8.7, -0.9, -2.4 | 40.1° | 10.9-12.0 mm |
+| **+ other 2 severe passes → held-out pass** | **5.2 mm** | **1.14 x - 1.04 S** | **-11.6, +2.9, +9.9, +0.9, -10.5** | **44.4°** | **18.9-21.3 mm** |
+| + severe pass 1 → passes 2, 3 | 4.3 mm | 1.12 x - 0.79 S | -7.2, +5.5, +8.3, +2.2, -6.5 | 37.3° | 15.3-15.7 mm |
+| + severe pass 2 → passes 1, 3 | 5.2 mm | 1.01 x - 1.06 S | -16.1, +3.3, +9.0, -0.1, -8.6 | 50.9° | 19.1-20.1 mm |
+| + severe pass 3 → passes 1, 2 | 4.8 mm | 0.92 x - 0.91 S | -11.2, +0.2, +9.2, -0.9, -9.8 | 41.7° | 17.3-17.6 mm |
+
+Healthy rows held out, with all severe stamps in training: MAE 5.4 mm (4.9 without severe), centred
+C-bows -2.2 to +3.7 mm. So adding severe barely costs the healthy mold, and the screening gap widens:
+healthy ≤ 3.7 mm vs severe 15-21 mm.
+
+- With severe passes in training, the model reads the full spine shift (b ≈ -1) and the Cobb lands
+  within about 3-10° of design. That is the "train on some, test on the rest" result.
+- But a held-out pass shares the day, the rows and the exact spine positions with training, so it
+  shows the model *can* read the spine, not that it will on a new mold. Holding out a whole row (spine
+  positions not seen in training) gives 40°. The moderate mold, never trained on, is the real test.
+- The segment Cobb of healthy medians reads 53°: segment tilts magnify noise, so use the C-bow for
+  yes/no and the full 5-spot layout for an angle.
+
+## Training on the severe stamps too (amplitude features, 2026-11-24) (bri's suggestion)
 
 `mix.py`: healthy + severe stamps, labels = head offset from the spine (x - S).
 
