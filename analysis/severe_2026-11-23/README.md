@@ -151,6 +151,35 @@ healthy ≤ 3.7 mm vs severe 15-21 mm.
 - The segment Cobb of healthy medians reads 53°: segment tilts magnify noise, so use the C-bow for
   yes/no and the full 5-spot layout for an angle.
 
+## Blind test: moderate mold Cobb from centred stamps (2026-11-25, `moderate_blind.py`)
+
+Trained the phase-between-discs model on healthy (11-22) + severe (11-23), then read the moderate mold
+from its 15 centred stamps (x = 0, rows y = 2, 45, 73, 97, 127, 3 passes) without using any moderate label.
+
+**Recorded ur went bad on 11-25.** Its phase vs drive scatters 24-39 deg between reseats (4-6 deg
+on 11-22/23) and its amplitude dropped about 10x (SNR 41 dB vs 57). Recorded dl, left out before, is
+clean again that day. With ur in the model every 11-25 stamp read tens of mm off (moderate
+[-4.5, -46.3, -6.6, -21.1, -53.3] mm, same-day healthy controls -24 to -30 mm). Only recorded ul and
+dr are healthy in all three sessions, so the model below uses just the phase between those two
+(`python ../analysis/severe_2026-11-23/moderate_blind.py dl,ur`). CV MAE on healthy+severe 6.7 mm.
+
+| vertebra (row) | pass 1 | pass 2 | pass 3 | median | design |
+|---|---|---|---|---|---|
+| T12 (y 2) | 12.1 | 18.2 | 17.6 | 17.6 | -3.8 |
+| T11 (y 45) | 4.6 | 4.3 | 5.6 | 4.6 | 3.9 |
+| T10 (y 73) | 12.3 | 9.2 | 8.8 | 9.2 | 7.4 |
+| T9 (y 97) | 1.9 | 5.2 | 6.1 | 5.2 | 3.3 |
+| T8 (y 127) | -12.9 | -6.4 | -2.8 | -6.4 | -6.3 |
+
+- **T11 to T8 are within 2 mm of the design** (median of 3 passes). T12 reads 21 mm too far right.
+- Segment Cobb, median of 3: **30.6 deg vs design 30.8**, but partly by luck: the T12-T11 tilt has the
+  wrong sign (-21 vs +13 deg). Over the top four vertebrae: 30.6 vs design 25.0. Single passes: 41.7,
+  32.6, 26.3 deg (5 vertebrae).
+- The C-curve fit fails here (5 deg) because the wrong T12 flattens the bow.
+- Same-day controls at y = 0 and 20 also read 6-20 mm right (healthy +7, +17; severe +4, +19 vs design
+  +1, 0, -9, -2), so the bottom of the mold read right-biased on 11-25. Upper rows have no controls.
+- Reseat spread per row 0.7-5 mm SD, smaller than on 11-22 (about 5 mm).
+
 ## Training on the severe stamps too (amplitude features, 2026-11-24) (bri's suggestion)
 
 `mix.py`: healthy + severe stamps, labels = head offset from the spine (x - S).

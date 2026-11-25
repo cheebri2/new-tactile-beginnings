@@ -148,7 +148,8 @@ MOLDS = {
     "severe":   {"x": (-11.9, 2.5, 8.9, 3.9, -9.3),    "y": (163.3, 133.4, 109.3, 81.3, 48.1)},
 }
 # which mold each recorded object was stamped on
-OBJECT_MOLD = {"healthy_vertebra": "aligned", "moderate_scoliosis": "moderate", "severe_scoliosis": "severe"}
+OBJECT_MOLD = {"healthy_vertebra": "aligned", "healthy": "aligned", "moderate_scoliosis": "moderate",
+               "mod_scoliosis": "moderate", "severe_scoliosis": "severe"}
 
 
 def mold(name):
