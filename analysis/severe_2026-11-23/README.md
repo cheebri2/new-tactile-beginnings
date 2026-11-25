@@ -98,6 +98,33 @@ a C-shaped curve only (an S-curve needs a different shape fit), the phase featur
 seeing severe, and the model reads about 70 % of the true bow, so the moderate mold (design bow 12 mm,
 expected reading ~8.4 mm) would land right on that threshold.
 
+## Drift correction as a preprocessing step (2026-11-25, `drift_correction.py`)
+
+Within one stamp, drift is already handled: each tone's sine fit includes a slow quadratic drift term,
+so baseline creep during the 0.4 s window doesn't leak into amplitude or phase. Across stamps, the
+phase-between-discs features were tested with five corrections (healthy mold only for training):
+
+| correction | healthy CV MAE | severe MAE | follows spine (b in a·x + b·S) | severe Cobb (47.4°) | centred C-bow severe / healthy |
+|---|---|---|---|---|---|
+| **none** | 3.75 | **4.66** | -0.70 | 34.6° | 12.5-13.4 / -2.7-5.0 mm |
+| previous blank | 5.30 | 11.7 | -0.37 | 34.6° | 9.8-12.6 / -1.5-7.0 |
+| blanks interpolated in time | 5.42 | 14.8 | -0.88 | 53.1° | 21-25 / 8.4-16.6 |
+| blank trend (line through the session's blanks) | 3.93 | 5.38 | -0.63 | 24.6° | 14.1-16.1 / -0.9-6.9 |
+| session mean removed | 3.71 | 4.96 | -0.66 | 40.1° | 11.9-15.5 / -0.9-5.1 |
+| time trend of all stamps removed | 3.27 | 5.81 | -0.50 | 25.8° | 9.8-13.2 / -0.9-3.8 |
+
+- Blank-based corrections hurt: each blank is its own reseat, so a blank is noisier than the drift it
+  would remove, and the severe day had only 2 blanks.
+- Removing a time trend fitted to the stamps themselves helps the healthy CV but removes real spine
+  signal, because the rows were stamped in order (y, and so the spine shift, changes with time).
+- Removing each session's mean is a wash: Cobb closer (40° vs 35°), per-stamp error slightly worse.
+  Available as `locator.py train --drift session-mean`, off by default. It needs the whole session
+  before it can predict, and the session must be balanced left/right of the spine.
+- The phase between discs already cancels most drift, which is why the uncorrected version holds up.
+
+The better fix for drift is in the protocol: stamp rows and x positions in random order, so drift
+averages out instead of lining up with y.
+
 ## Training on the severe stamps too (bri's suggestion)
 
 `mix.py`: healthy + severe stamps, labels = head offset from the spine (x - S).

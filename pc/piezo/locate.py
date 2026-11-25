@@ -115,6 +115,23 @@ def relphase_matrix(feats: pd.DataFrame, trial_ids, channels=None, freqs=None, f
 FEATURES = {"phase-rel": relphase_matrix, "share-amp": share_matrix}
 
 
+def centre_sessions(X, sessions):
+    """Drift option for phase-rel features: rotate each session's relative phases so the session's
+    average is zero (removes a day-to-day offset). Needs the whole session first, and assumes the
+    session's stamps are balanced left/right of the spine. On 2026-11-22/23 it moved the severe Cobb
+    from 34.6 to 40.1 deg (design 47.4) but per-stamp error from 4.7 to 5.0 mm, so it is off by default.
+    Blank-based corrections (previous blank, interpolated blanks, blank trend) all made things worse:
+    each blank is its own reseat and is noisier than the drift it would remove."""
+    X = np.array(X, float)
+    n = X.shape[1] // 2
+    z = X[:, :n] + 1j * X[:, n:]
+    for sess in np.unique(sessions):
+        m = np.asarray(sessions) == sess
+        ref = z[m].mean(axis=0)
+        z[m] = z[m] * np.conj(ref / np.abs(ref))
+    return np.hstack([z.real, z.imag])
+
+
 # ------------------------------------------------------------------ phantom geometry
 
 # bri's mold maps (2026-11-24, "Aligned/Moderate/Severe Spine Positioning"). Each mold is 107 mm wide

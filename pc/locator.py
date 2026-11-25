@@ -61,6 +61,8 @@ def train(a):
     trials, feats = locate.load(a.data, a.turn, a.bad_discs)
     st = stamps(trials, a.objects)
     X, names, chans, freqs = locate.FEATURES[a.features](feats, st.trial_id, f_min=a.f_min, f_max=a.f_max)
+    if a.drift == "session-mean":
+        X = locate.centre_sessions(X, st.session.astype(str).to_numpy())
     # Label = head offset from the spine under the sensor centre. --x-from centreline: typed x is from
     # the mold centreline, so subtract the mold's spine position there (aligned mold: within 1.5 mm).
     if a.mold_correct:
@@ -110,7 +112,7 @@ def train(a):
         "calibration": {"slope": float(slope_raw), "intercept": float(icpt_raw)},
     }
     meta = {"trained": dt.datetime.now().isoformat(timespec="seconds"), "data": str(a.data),
-            "turn": a.turn, "bad_discs": list(a.bad_discs), "features": a.features, "feature_set": a.features,
+            "turn": a.turn, "bad_discs": list(a.bad_discs), "features": a.features, "feature_set": a.features, "drift": a.drift,
             "f_min": a.f_min, "f_max": a.f_max, "mold_correct": a.mold_correct, "target": "x_mm (head right of spine, mm)", "cv": metrics}
     locate.save_model(a.model, model, chans, freqs, meta)
 
@@ -173,6 +175,8 @@ def predict(a):
     st = stamps(trials, a.objects)
     X, *_ = locate.FEATURES[m.get("feature_set", "share-amp")](feats, st.trial_id, m["channels"], m["freqs"],
                                                               m["f_min"], m["f_max"])
+    if m.get("drift") == "session-mean":
+        X = locate.centre_sessions(X, st.session.astype(str).to_numpy())
     cal = m["cv"].get("calibration", {"slope": 1.0, "intercept": 0.0})
     st["pred_x_mm"] = (locate.ridge_predict(m, X) - cal["intercept"]) / cal["slope"]
     hx, hy = ("imu_x_mm", "imu_y_mm") if a.position == "imu" else ("x_mm", "y_mm")
@@ -201,6 +205,9 @@ def main():
                    help="top of the band (default 200 Hz: 50-190 Hz did best on the 2026-11-22 batch)")
     t.add_argument("--features", choices=sorted(locate.FEATURES), default="phase-rel",
                    help="phase-rel (default): phase between discs, cancels pressure; share-amp: amplitude shares")
+    t.add_argument("--drift", choices=["none", "session-mean"], default="none",
+                   help="session-mean: remove each session's average relative phase (phase-rel only; see "
+                        "locate.centre_sessions). Default none")
     t.add_argument("--objects", nargs="*", default=["healthy_vertebra"],
                    help="which objects to train on (default: the healthy phantom only)")
     t.add_argument("--mold-correct", action="store_true",
