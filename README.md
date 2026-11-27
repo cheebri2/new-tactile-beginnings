@@ -116,6 +116,33 @@ centred change, each feature scaled by repeat spread plus blank-to-blank drift. 
 `models/centred_template_2026-11-15.json`, comes from one session (25 vertebra trials at x = -10..+10 mm,
 depth 15 mm). Replaying that session gives 23/25 correct, but that is in-sample; +5 mm sits on the bound.
 
+## Locate the spine and estimate a Cobb angle (stamps)
+
+A "stamp" is one sweep with the head pressed on the phantom at a typed x/y (`capture.py --test object
+--object healthy_vertebra --x .. --y ..`). The locator learns `x_mm` (how far the head is right of the
+spine) from the discs' amplitude shares; the spine under the head is then at head x minus the prediction.
+
+```
+cd pc
+python locator.py train --data final_data --turn cw90 --bad-discs dl   # fit + held-out score -> models/locator.json
+python locator.py predict --data <new stamps>                          # spine_x_mm per stamp
+python cobb.py estimate training/results/locator_predict/predictions.csv
+python cobb.py feasibility training/results/locator/predictions.csv     # Cobb error with the real locator errors
+```
+
+- `--turn cw90`: the head was turned so its up side points to the phantom's right (2026-11-22 batch):
+  recorded dr -> dl, dl -> ul, ul -> ur, ur -> dr. Discs are renamed to phantom positions before
+  training. Use `none` for square data.
+- `--bad-discs`: recorded names of discs to leave out. `dl` (GPIO33) was intermittent on 2026-11-22.
+- Features: log amplitude of each disc minus the mean of the discs, 50-190 Hz. No blank needed.
+- Validation holds out one whole y row at a time (`--group`), never single stamps.
+- `--vertebrae 0 30 60 85 125` (default): stamp y at which each of the phantom's 5 processes sits at the
+  sensor centre. Adds `level` and `dy_mm` to predictions; `cobb.py` places each vertebra at its own y.
+- Positions come from the typed x/y. The IMU x/y did not track the typed positions on 2026-11-22, so
+  don't use `--position imu` until that is fixed.
+
+Results and what data to take next: `analysis/stamps_2026-11-22/README.md`.
+
 ## Compare conditions
 
 ```
