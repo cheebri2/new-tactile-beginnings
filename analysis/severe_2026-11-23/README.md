@@ -206,6 +206,24 @@ centred stamps. Cobb from centred stamps (segment tilts); "mid3" uses T11-T9 onl
 
 ![middle three](middle_three.png)
 
+## Trained on all 5, read out on the middle three (2026-11-27, `middle_three_readout.py`)
+
+Centred stamps at T11, T10, T9 only. Middle-3 Cobb scaled by 1.86 (the mold maps give mid3 / full =
+0.53 severe, 0.55 moderate; fitted on the same molds, so the scale is not independent).
+
+| | T11 | T10 | T9 | centred err | all-stamp MAE | mid3 Cobb | scaled |
+|---|---|---|---|---|---|---|---|
+| severe design (full 47.4) | 3.9 | 8.9 | 2.5 | | | 25.0 | 46.6 |
+| severe pass 1 / 2 / 3 | -0.2 / -4.6 / 5.0 | 11.1 / 8.5 / 7.5 | -5.1 / 7.4 / -0.2 | 4.6 / 4.6 / 1.7 | 7.0 / 7.8 / 5.7 | 55.9 / 27.5 / 22.9 | 104 / 51 / 43 |
+| moderate design (full 30.8) | 3.9 | 7.4 | 3.3 | | | 16.8 | 31.3 |
+| moderate pass 1 / 2 / 3 | 4.6 / 4.3 / 5.6 | 12.3 / 9.2 / 8.8 | 1.9 / 5.2 / 6.1 | 2.3 / 1.4 / 2.0 | | 38.6 / 19.3 / 12.9 | 72 / 36 / 24 |
+
+Median of the 3 pass Cobbs (scaled): severe 51 (design 47), moderate 36 (design 31). The median
+spine reads 69 and 35: on the severe, the median puts T11 and T9 at the same x, which inflates it.
+One bad pass (pass 1 on both molds) doubles the Cobb, so take the median of pass Cobbs.
+
+![middle three readout](middle_three_readout.png)
+
 ## Training on the severe stamps too (amplitude features, 2026-11-24) (bri's suggestion)
 
 `mix.py`: healthy + severe stamps, labels = head offset from the spine (x - S).

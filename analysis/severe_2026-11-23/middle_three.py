@@ -64,6 +64,9 @@ for train_name, keep in [("all 5", LV), ("middle 3", MID)]:
     pred, cv = fit(hm, s.level.isin(keep).to_numpy())
     mod = mo.assign(spine=mo.x_mm - pred(Xm))
     mod["err"] = mod.spine - mod.level.map(M)
+    pd.concat([sev.assign(case="severe"), mod.assign(case="moderate")]).assign(trained=train_name)[
+        ["case", "trained", "trial_id", "x_mm", "y_mm", "repeat", "level", "spine", "err"]].to_csv(
+        OUT / f"middle_three_pred_{train_name.replace(' ', '')}.csv", index=False)
     for case, d, ymap, design in [("severe", sev, SY, S), ("moderate", mod, MY, M)]:
         cen = d[d.x_mm == 0]
         tab = cen.pivot_table(index="level", columns="repeat", values="spine").reindex(LV)
