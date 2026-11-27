@@ -184,6 +184,28 @@ dr are healthy in all three sessions, so the model below uses just the phase bet
   but this assumes a single C-curve centred at T10, and 1 mm of error moves the result about 4-5 deg.
 - Reseat spread per row 0.7-5 mm SD, smaller than on 11-22 (about 5 mm).
 
+## Training on the middle three vertebrae only (2026-11-27, `middle_three.py`)
+
+Same ul-dr phase model, trained either on all 5 vertebrae or only on stamps whose nearest process is
+T11, T10 or T9 (healthy + severe). Severe: each of the 3 passes held out in turn. Moderate: blind,
+centred stamps. Cobb from centred stamps (segment tilts); "mid3" uses T11-T9 only.
+
+| | severe Cobb (design 47.4, mid3 24.6) | moderate Cobb (design 30.8, mid3 16.6) |
+|---|---|---|
+| trained on all 5, passes | 57.1, 51.8, 46.8 (mid3 55.9, 27.5, 22.9) | 41.7, 32.6, 26.3 (mid3 38.6, 19.3, 12.9) |
+| trained on all 5, median spine | 40.4 (mid3 37.1) | 30.6 (mid3 18.7) |
+| trained on middle 3, passes | 45.7, 33.6, 25.6 (mid3 45.7, 15.1, 7.7) | 30.2, 18.3, 19.2 (mid3 26.8, 7.7, 7.9) |
+| trained on middle 3, median spine | 29.1 (mid3 25.3) | 19.6 (mid3 9.2) |
+
+- Training on the middle three does not help. Per-stamp error barely changes (severe middle-row MAE
+  5.8 vs 6.8 mm, moderate centred middle 1.8 vs 1.9 mm), but the model has seen fewer large offsets,
+  so it pulls every reading toward the centreline and both molds read flatter (moderate mid3 9° vs 17°).
+- On the moderate T12, the middle-3 model is less wrong (+9.3 vs +17.6 mm, design -3.8). Neither
+  fixes it, which fits a bad stamp or session bias rather than a model limit.
+- Keep training on all 5. Using only the middle three for the Cobb fit is a choice made at read time.
+
+![middle three](middle_three.png)
+
 ## Training on the severe stamps too (amplitude features, 2026-11-24) (bri's suggestion)
 
 `mix.py`: healthy + severe stamps, labels = head offset from the spine (x - S).
