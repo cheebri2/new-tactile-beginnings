@@ -63,7 +63,7 @@ for ax, case in zip(axs[:2], ("severe", "moderate")):
         ax.text(-24, y_, l, va="center", fontsize=8, color="0.4")
     ax.set(xlim=(-25, 20), ylim=(65, 145), xlabel="spine x from mold centreline (mm)",
            ylabel="height above mold bottom (mm)", title=f"{case}: middle three, centred stamps")
-    ax.title.set_fontsize(10); ax.legend(fontsize=7.5, loc="lower right")
+    ax.title.set_fontsize(10)
 ax = axs[2]
 for i, case in enumerate(("severe", "moderate")):
     r = res[res.case == case]
@@ -74,7 +74,9 @@ for i, case in enumerate(("severe", "moderate")):
     ax.plot(i + 0.2, r[r["pass"] == "median"]["scaled Cobb"].iloc[0], "s", color="#c0392b", ms=8)
 ax.axhspan(0, 10, color="0.93", zorder=0)
 ax.set(xticks=[0, 1], xticklabels=["severe", "moderate"], xlim=(-0.6, 1.6), ylim=(0, 110),
-       ylabel="Cobb (deg)", title=f"Middle-3 Cobb x{SCALE:.2f} vs design\nline = design, dots = passes, square = median spine")
+       ylabel="Cobb (deg)", title=f"Middle-3 Cobb x{SCALE:.2f}\nline = design full Cobb")
 ax.title.set_fontsize(10)
-fig.tight_layout(); fig.savefig(OUT / "middle_three_readout.png", dpi=150)
+h, l = axs[0].get_legend_handles_labels()
+fig.legend(h, l, loc="lower center", ncol=5, fontsize=8, frameon=False)
+fig.tight_layout(rect=(0, 0.07, 1, 1)); fig.savefig(OUT / "middle_three_readout.png", dpi=150)
 print(f"-> {OUT}/middle_three_readout.csv, middle_three_readout.png")
