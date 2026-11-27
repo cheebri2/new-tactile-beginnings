@@ -178,6 +178,10 @@ dr are healthy in all three sessions, so the model below uses just the phase bet
 - The C-curve fit fails here (5 deg) because the wrong T12 flattens the bow.
 - Same-day controls at y = 0 and 20 also read 6-20 mm right (healthy +7, +17; severe +4, +19 vs design
   +1, 0, -9, -2), so the bottom of the mold read right-biased on 11-25. Upper rows have no controls.
+- **Middle three vertebrae only (T11, T10, T9).** By design these span only the curve's apex, so they
+  read about half the full Cobb on every mold (aligned 3.2/7.0, moderate 16.8/30.8, severe 25.0/47.4
+  deg). Read: median 18.7 deg (passes 38.6, 19.3, 12.9). Scaled by the molds' 1/0.54: 34.6 vs 30.8 deg,
+  but this assumes a single C-curve centred at T10, and 1 mm of error moves the result about 4-5 deg.
 - Reseat spread per row 0.7-5 mm SD, smaller than on 11-22 (about 5 mm).
 
 ## Training on the severe stamps too (amplitude features, 2026-11-24) (bri's suggestion)
